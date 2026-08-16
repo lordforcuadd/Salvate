@@ -379,15 +379,19 @@ const reportStatus = async (status) => {
 };
 
 const triggerSMSFallback = () => {
-  const status = authStore.userStatus;
-  const name = authStore.userName || 'Usuario Sálvate';
-  const latStr = currentCoords.value ? currentCoords.value.lat.toFixed(5) : '-12.0463';
-  const lngStr = currentCoords.value ? currentCoords.value.lng.toFixed(5) : '-77.0427';
-  
-  const payload = `[EMERGENCIA SALVATE PERU] Estado: ${status.toUpperCase()} | Nombre: ${name} | GPS: https://maps.google.com/?q=${latStr},${lngStr}`;
-  
-  const smsUrl = `sms:?body=${encodeURIComponent(payload)}`;
-  window.location.href = smsUrl;
+  try {
+    const status = authStore.userStatus;
+    const name = authStore.userName || 'Usuario Sálvate';
+    const latStr = currentCoords.value ? currentCoords.value.lat.toFixed(5) : '-12.0463';
+    const lngStr = currentCoords.value ? currentCoords.value.lng.toFixed(5) : '-77.0427';
+    
+    const payload = `[EMERGENCIA SALVATE PERU] Estado: ${status.toUpperCase()} | Nombre: ${name} | GPS: https://maps.google.com/?q=${latStr},${lngStr}`;
+    
+    const smsUrl = `sms:?body=${encodeURIComponent(payload)}`;
+    window.location.href = smsUrl;
+  } catch (e) {
+    console.warn('SMS protocol not supported or canceled on this device:', e);
+  }
 };
 
 const getBadgeVariant = (status) => {

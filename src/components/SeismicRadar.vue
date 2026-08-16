@@ -276,7 +276,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useSeismicStore } from '../stores/seismicStore';
 import { useAuthStore } from '../stores/authStore';
 import AppBadge from './ui/AppBadge.vue';
@@ -321,11 +321,13 @@ watch(displayedEvents, () => {
   updateMapMarkers();
 }, { deep: true });
 
-// Reactively update user marker and recalculate seismic distances when user location changes
+// Reactively update user marker and recalculate seismic distances in-memory when user location changes
 watch(() => authStore.userCoords, (newCoords) => {
-  if (newCoords && map) {
-    updateUserMarker(newCoords.lat, newCoords.lng);
-    seismicStore.initSeismicStore(newCoords);
+  if (newCoords) {
+    if (map) {
+      updateUserMarker(newCoords.lat, newCoords.lng);
+    }
+    seismicStore.updateUserCoordsAndRecalculate(newCoords);
   }
 }, { deep: true });
 
@@ -482,4 +484,17 @@ const getMagnitudeColor = (mag) => {
   if (mag >= 4.5) return '#f59e0b';
   return '#10b981';
 };
+
+onBeforeUnmount(() => {
+  seismicStore.stopPolling();
+  if (map) {
+    try {
+      map.off();
+      map.remove();
+    } catch (e) {}
+    map = null;
+    markersGroup = null;
+    userMarker = null;
+  }
+});
 </script>

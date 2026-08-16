@@ -211,7 +211,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, nextTick } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useHazardStore } from '../stores/hazardStore';
 import { useAuthStore } from '../stores/authStore';
 import AppBadge from './ui/AppBadge.vue';
@@ -332,7 +332,7 @@ const centerOnUser = () => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const freshCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        authStore.userCoords = freshCoords;
+        authStore.setUserCoords(freshCoords);
 
         if (map) {
           map.setView([freshCoords.lat, freshCoords.lng], 15, { animate: true });
@@ -397,4 +397,16 @@ const formatTime = (isoString) => {
   const date = new Date(isoString);
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
+
+onBeforeUnmount(() => {
+  if (map) {
+    try {
+      map.off();
+      map.remove();
+    } catch (e) {}
+    map = null;
+    markersGroup = null;
+    userMarker = null;
+  }
+});
 </script>

@@ -23,11 +23,11 @@
 
           <button
             type="button"
-            class="w-8 h-8 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+            class="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 flex items-center justify-center shrink-0 transition-all cursor-pointer active:scale-95 shadow-sm"
             aria-label="Cerrar ventana"
             @click="close"
           >
-            <X class="w-4 h-4" />
+            <X class="w-4.5 h-4.5" />
           </button>
         </div>
 

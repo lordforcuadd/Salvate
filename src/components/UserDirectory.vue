@@ -78,9 +78,9 @@
           </div>
           
           <div class="min-w-0 flex-1 space-y-0.5">
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="text-xs sm:text-sm font-bold text-zinc-100 truncate">{{ u.name }}</span>
-              <AppBadge v-if="u.id === authStore.userId" variant="transit" size="xs">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="text-xs sm:text-sm font-bold text-zinc-100 truncate min-w-0 flex-1">{{ u.name }}</span>
+              <AppBadge v-if="u.id === authStore.userId" variant="transit" size="xs" class="shrink-0">
                 (Tú)
               </AppBadge>
             </div>

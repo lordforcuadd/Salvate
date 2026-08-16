@@ -166,7 +166,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useMeshStore } from '../stores/meshStore';
 import { useAuthStore } from '../stores/authStore';
 import { useDialogStore } from '../stores/dialogStore';
@@ -276,4 +276,19 @@ const formatExactTime = (isoString) => {
   const date = new Date(isoString);
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
+
+onBeforeUnmount(() => {
+  if (isRecording.value) {
+    stopRecording();
+  }
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  if (mediaRecorder && mediaRecorder.stream) {
+    try {
+      mediaRecorder.stream.getTracks().forEach(t => t.stop());
+    } catch (e) {}
+  }
+});
 </script>

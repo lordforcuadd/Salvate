@@ -234,7 +234,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useAuthStore } from './stores/authStore';
 import { useMeshStore } from './stores/meshStore';
 
@@ -349,4 +349,8 @@ watch(() => authStore.user, (newUser) => {
     meshStore.initMesh(newUser);
   }
 }, { deep: true });
+
+onBeforeUnmount(() => {
+  meshStore.stopMesh();
+});
 </script>

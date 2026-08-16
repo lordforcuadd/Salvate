@@ -58,7 +58,7 @@ export const useMeshStore = defineStore('mesh', {
       if (!this.pollInterval) {
         this.pollInterval = setInterval(async () => {
           await this.reloadFromDB();
-        }, 1000);
+        }, 3000);
       }
 
       if (currentUser && currentUser.id) {
@@ -73,9 +73,32 @@ export const useMeshStore = defineStore('mesh', {
           this.broadcastChannel.postMessage(payload);
         } catch (e) {}
       }
+      // Note: We append _ts with Date.now() + Math.random() to guarantee that localStorage value changes on every call,
+      // which is required by web browsers to reliably trigger the cross-tab 'storage' event across browser windows.
       try {
         localStorage.setItem('salvate_live_gossip', JSON.stringify({ ...payload, _ts: Date.now() + Math.random() }));
       } catch (e) {}
+    },
+
+    stopMesh() {
+      if (this.pollInterval) {
+        clearInterval(this.pollInterval);
+        this.pollInterval = null;
+      }
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+      }
+      if (this.broadcastChannel) {
+        try { this.broadcastChannel.close(); } catch (e) {}
+        this.broadcastChannel = null;
+      }
+      if (this.peerInstance && !this.peerInstance.destroyed) {
+        try { this.peerInstance.destroy(); } catch (e) {}
+        this.peerInstance = null;
+      }
+      this.isP2PActive = false;
+      this.activePeersCount = 0;
     },
 
     async reloadFromDB() {
@@ -103,16 +126,10 @@ export const useMeshStore = defineStore('mesh', {
 
     async cleanupGhostUsers(currentUserId) {
       const now = Date.now();
+      // Only delete contacts that are genuinely inactive (>3 minutes without updates)
       const ghostIds = this.users
         .filter(u => u.id !== currentUserId && (now - new Date(u.updatedAt || 0).getTime() > 180000))
         .map(u => u.id);
-
-      if (ghostIds.length === 0 && this.users.length > 1) {
-        const oldestOther = [...this.users].filter(u => u.id !== currentUserId).sort((a, b) => new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0))[0];
-        if (oldestOther) {
-          ghostIds.push(oldestOther.id);
-        }
-      }
 
       const removedCount = ghostIds.length;
 
@@ -555,7 +572,7 @@ export const useMeshStore = defineStore('mesh', {
           });
 
           this.peerConnections.forEach(conn => {
-            if (conn && conn.open) {
+            if (conn && conn.open && conn.peer !== msg.senderId) {
               try {
                 conn.send({
                   type: 'GOSSIP_BROADCAST',

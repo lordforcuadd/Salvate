@@ -223,6 +223,13 @@ const startTorchSOS = async () => {
     console.warn('Torch API unsupported, using screen strobe fallback:', e);
   }
 
+  // Release camera hardware immediately before falling back to screen strobe
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+    torchTrack = null;
+  }
+
   runMorseSequenceScreen();
 };
 

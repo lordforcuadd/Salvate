@@ -5,7 +5,7 @@ export const useSeismicStore = defineStore('seismic', {
     allEvents: [],
     peruEvents: [],
     isLoading: false,
-    activeSource: 'IGP / CENSIS (Perú)',
+    activeSource: 'IGP / USGS Oficial',
     lastUpdated: null,
     pollingInterval: null,
     timeRange: '24h', // '24h' | '7d' | '30d'
@@ -28,7 +28,7 @@ export const useSeismicStore = defineStore('seismic', {
       if (!this.pollingInterval) {
         this.pollingInterval = setInterval(() => {
           this.fetchSeismicData(this.userCoords);
-        }, 20000);
+        }, 30000);
       }
     },
 
@@ -37,6 +37,25 @@ export const useSeismicStore = defineStore('seismic', {
         clearInterval(this.pollingInterval);
         this.pollingInterval = null;
       }
+    },
+
+    updateUserCoordsAndRecalculate(userCoords) {
+      if (!userCoords) return;
+      this.userCoords = userCoords;
+
+      const recalculate = (evt) => {
+        const distKm = Math.round(calculateHaversineDistance(userCoords.lat, userCoords.lng, evt.lat, evt.lng));
+        const bearing = calculateBearing(userCoords.lat, userCoords.lng, evt.lat, evt.lng);
+        return {
+          ...evt,
+          distanceKm: distKm,
+          bearing,
+          intensityDesc: getIntensityDescription(evt.magnitude, distKm)
+        };
+      };
+
+      this.peruEvents = this.peruEvents.map(recalculate);
+      this.allEvents = this.allEvents.map(recalculate);
     },
 
     async setTimeRange(range) {
@@ -57,7 +76,7 @@ export const useSeismicStore = defineStore('seismic', {
         usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson';
       }
 
-      // 1. Fetch USGS GeoJSON feed
+      // 1. Fetch real USGS GeoJSON feed (includes Peru & Global events)
       try {
         const usgsRes = await fetch(usgsUrl);
         if (usgsRes.ok) {
@@ -79,7 +98,7 @@ export const useSeismicStore = defineStore('seismic', {
 
             return {
               id: feat.id,
-              source: isPeru ? 'IGP / CENSIS (Perú)' : 'USGS Global',
+              source: isPeru ? 'Monitoreo Sísmico Perú' : 'USGS Global',
               placeTitle: translatedPlace,
               regionBadge: regionBadge,
               magnitude: props.mag || 0,
@@ -98,84 +117,48 @@ export const useSeismicStore = defineStore('seismic', {
           });
         }
       } catch (err) {
-        // Quiet fallback
+        console.warn('Could not fetch USGS feed (working in offline/cache mode):', err);
       }
 
-      // 2. Official IGP Peru CENSIS official seismic bulletins (matches official IGP/CENSIS report 1:1)
-      const officialIgpEvents = [
-        {
-          id: 'igp-2026-0549',
-          source: 'IGP / CENSIS (Perú)',
-          placeTitle: '58 km al SO de Sechura, Sechura - Piura',
-          regionBadge: 'Región Piura',
-          magnitude: 3.8,
-          time: '2026-08-12T10:46:37-05:00',
-          formattedDateTime: formatPeruDateTime('2026-08-12T10:46:37-05:00'),
-          formattedTime: '10:46:37',
-          timeAgo: formatTimeAgo('2026-08-12T10:46:37-05:00'),
-          lat: -5.89,
-          lng: -81.23,
-          depthKm: 29,
-          distanceKm: Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23)),
-          bearing: calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23),
-          isPeru: true,
-          intensityDesc: getIntensityDescription(3.8, Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23)))
-        },
-        {
-          id: 'igp-2026-0548',
-          source: 'IGP / CENSIS (Perú)',
-          placeTitle: '27 km al Este de Chuquitira, Tarata - Tacna',
-          regionBadge: 'Región Tacna',
-          magnitude: 4.2,
-          time: '2026-08-12T06:18:22-05:00',
-          formattedDateTime: formatPeruDateTime('2026-08-12T06:18:22-05:00'),
-          formattedTime: '06:18:22',
-          timeAgo: formatTimeAgo('2026-08-12T06:18:22-05:00'),
-          lat: -17.28,
-          lng: -69.89,
-          depthKm: 159,
-          distanceKm: Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -17.28, -69.89)),
-          bearing: calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, -17.28, -69.89),
-          isPeru: true,
-          intensityDesc: getIntensityDescription(4.2, Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -17.28, -69.89)))
-        },
-        {
-          id: 'igp-2026-0547',
-          source: 'IGP / CENSIS (Perú)',
-          placeTitle: '14 km al SO de Matucana, Huarochirí - Lima',
-          regionBadge: 'Región Lima',
-          magnitude: 4.0,
-          time: '2026-08-11T22:15:10-05:00',
-          formattedDateTime: formatPeruDateTime('2026-08-11T22:15:10-05:00'),
-          formattedTime: '22:15:10',
-          timeAgo: formatTimeAgo('2026-08-11T22:15:10-05:00'),
-          lat: -11.92,
-          lng: -76.42,
-          depthKm: 110,
-          distanceKm: Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -11.92, -76.42)),
-          bearing: calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, -11.92, -76.42),
-          isPeru: true,
-          intensityDesc: getIntensityDescription(4.0, Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -11.92, -76.42)))
-        }
-      ];
+      // 2. Fallback offline simulation drills (Clearly tagged as DEMO/SIMULACRO so users are never misled)
+      const peruRealEvents = fetchedGlobalEvents.filter(e => e.isPeru);
+      let combinedPeru = [...peruRealEvents];
 
-      // Filter IGP events by time range (24h includes last 48h to preserve recent bulletins)
-      const now = Date.now();
-      const maxAgeMs = this.timeRange === '24h' ? 2 * 86400000 : (this.timeRange === '7d' ? 7 * 86400000 : 30 * 86400000);
-      const filteredIgp = officialIgpEvents.filter(e => (now - new Date(e.time).getTime()) <= maxAgeMs);
+      if (combinedPeru.length === 0 && fetchedGlobalEvents.length === 0) {
+        // Only if completely offline and zero cached events, provide clearly labeled demo drill events
+        const drillEvents = [
+          {
+            id: 'simulacro-igp-01',
+            source: 'Simulacro / Demo IGP',
+            placeTitle: '58 km al SO de Sechura, Sechura - Piura',
+            regionBadge: 'Región Piura (Simulacro)',
+            magnitude: 3.8,
+            time: '2026-08-12T10:46:37-05:00',
+            formattedDateTime: formatPeruDateTime('2026-08-12T10:46:37-05:00'),
+            formattedTime: '10:46:37',
+            timeAgo: formatTimeAgo('2026-08-12T10:46:37-05:00'),
+            lat: -5.89,
+            lng: -81.23,
+            depthKm: 29,
+            distanceKm: Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23)),
+            bearing: calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23),
+            isPeru: true,
+            isDemo: true,
+            intensityDesc: getIntensityDescription(3.8, Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23)))
+          }
+        ];
+        combinedPeru = drillEvents;
+      }
 
-      // Merge IGP Peru + USGS Global
-      const allPeruCombined = [...filteredIgp, ...fetchedGlobalEvents.filter(e => e.isPeru)];
-      
       const uniquePeruMap = new Map();
-      allPeruCombined.forEach(item => {
+      combinedPeru.forEach(item => {
         if (!uniquePeruMap.has(item.id)) {
           uniquePeruMap.set(item.id, item);
         }
       });
 
       const uniqueGlobalMap = new Map();
-      [...allPeruCombined, ...fetchedGlobalEvents].forEach(item => {
+      [...combinedPeru, ...fetchedGlobalEvents].forEach(item => {
         if (!uniqueGlobalMap.has(item.id)) {
           uniqueGlobalMap.set(item.id, item);
         }
@@ -206,109 +189,100 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
   const y = Math.sin((lon2 - lon1) * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180));
   const x = Math.cos(lat1 * (Math.PI / 180)) * Math.sin(lat2 * (Math.PI / 180)) -
             Math.sin(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.cos((lon2 - lon1) * (Math.PI / 180));
-  let brng = Math.atan2(y, x) * (180 / Math.PI);
-  brng = (brng + 360) % 360;
-  const compass = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
-  return compass[Math.round(brng / 45) % 8];
+  const brng = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  const index = Math.round(brng / 45) % 8;
+  return directions[index];
 }
 
 function isPointInPeruBoundingBox(lat, lng) {
-  return lat >= -18.5 && lat <= -0.03 && lng >= -81.4 && lng <= -68.6;
+  // Approximate Peru & immediate coastal trench boundary: Lat 0.0 to -19.5, Lng -82.0 to -68.0
+  return lat <= 0.2 && lat >= -19.5 && lng >= -82.0 && lng <= -68.0;
 }
 
-function extractPeruRegion(ref, lat, lng) {
-  if (ref && /piura/i.test(ref)) return 'Región Piura';
-  if (ref && /tacna/i.test(ref)) return 'Región Tacna';
-  if (ref && /lima|callao/i.test(ref)) return 'Región Lima / Callao';
-  if (ref && /arequipa/i.test(ref)) return 'Región Arequipa';
-  if (ref && /ica/i.test(ref)) return 'Región Ica';
-  if (ref && /cusco/i.test(ref)) return 'Región Cusco';
-  if (ref && /puno/i.test(ref)) return 'Región Puno';
+function formatPeruPlaceTitle(rawPlace, lat, lng, isPeru) {
+  if (!rawPlace) return { translatedPlace: isPeru ? 'Territorio Peruano' : 'Región Global', regionBadge: isPeru ? 'Perú' : 'Global' };
+  
+  let translated = rawPlace
+    .replace(/of/g, 'de')
+    .replace(/,\s*Peru/i, ' - Perú')
+    .replace(/,\s*Chile/i, ' - Chile')
+    .replace(/,\s*Ecuador/i, ' - Ecuador')
+    .replace(/,\s*Bolivia/i, ' - Bolivia')
+    .replace(/km\s+SSW/i, 'km al SSO')
+    .replace(/km\s+SW/i, 'km al SO')
+    .replace(/km\s+WSW/i, 'km al OSO')
+    .replace(/km\s+W/i, 'km al Oeste')
+    .replace(/km\s+WNW/i, 'km al ONO')
+    .replace(/km\s+NW/i, 'km al NO')
+    .replace(/km\s+NNW/i, 'km al NNO')
+    .replace(/km\s+N/i, 'km al Norte')
+    .replace(/km\s+NNE/i, 'km al NNE')
+    .replace(/km\s+NE/i, 'km al NE')
+    .replace(/km\s+ENE/i, 'km al ENE')
+    .replace(/km\s+E/i, 'km al Este')
+    .replace(/km\s+ESE/i, 'km al ESE')
+    .replace(/km\s+SE/i, 'km al SE')
+    .replace(/km\s+SSE/i, 'km al SSE')
+    .replace(/km\s+S/i, 'km al Sur');
 
-  if (lat >= -1.0 && lat <= -6.0 && lng >= -80.5 && lng <= -76.0) return 'Región Piura / Tumbes';
-  if (lat >= -5.5 && lat <= -9.0 && lng >= -80.0 && lng <= -77.0) return 'Región Lambayeque / La Libertad';
-  if (lat >= -8.5 && lat <= -11.0 && lng >= -78.5 && lng <= -76.0) return 'Región Ancash';
-  if (lat >= -11.0 && lat <= -13.5 && lng >= -77.8 && lng <= -75.5) return 'Región Lima / Callao';
-  if (lat >= -13.0 && lat <= -16.0 && lng >= -76.5 && lng <= -74.0) return 'Región Ica';
-  if (lat >= -15.0 && lat <= -17.5 && lng >= -74.5 && lng <= -71.0) return 'Región Arequipa';
-  if (lat >= -16.5 && lat <= -18.5 && lng >= -71.5 && lng <= -69.5) return 'Región Tacna / Moquegua';
-  return 'Región Perú';
-}
+  let regionBadge = isPeru ? 'Costa / Centro Perú' : 'Global';
+  const peruDepartments = [
+    'Lima', 'Callao', 'Arequipa', 'Ica', 'Moquegua', 'Tacna', 'Piura', 
+    'Tumbes', 'Lambayeque', 'La Libertad', 'Ancash', 'Cusco', 'Puno', 
+    'Loreto', 'Ucayali', 'San Martín', 'Junín', 'Ayacucho', 'Huancavelica', 
+    'Pasco', 'Huánuco', 'Amazonas', 'Cajamarca', 'Apurímac', 'Madre de Dios'
+  ];
 
-function formatPeruPlaceTitle(place, lat, lng, isPeru) {
-  if (!place) return { translatedPlace: 'Sismo Internacional', regionBadge: isPeru ? 'Región Perú' : 'Internacional' };
-
-  let title = place;
-
-  const parts = place.split(',');
-  const rawCountry = parts.length > 1 ? parts[parts.length - 1].trim() : '';
-
-  title = title.replace(/(\d+)\s*km\s*([NSEWO]+)\s*of\s*/gi, (match, dist, dir) => {
-    let spanishDir = dir.toUpperCase();
-    spanishDir = spanishDir.replace('N', 'Norte ').replace('S', 'Sur ').replace('E', 'Este ').replace('W', 'Oeste ');
-    return `${dist} km al ${spanishDir} de `;
-  });
-
-  title = title.replace(/,\s*Peru$/i, '');
-
-  let regionBadge = 'Internacional';
-  if (isPeru) {
-    regionBadge = extractPeruRegion(title, lat, lng);
-  } else if (rawCountry) {
-    let countryName = rawCountry;
-    if (/Chile/i.test(rawCountry)) countryName = 'Chile';
-    else if (/Ecuador/i.test(rawCountry)) countryName = 'Ecuador';
-    else if (/Bolivia/i.test(rawCountry)) countryName = 'Bolivia';
-    else if (/Argentina/i.test(rawCountry)) countryName = 'Argentina';
-    else if (/Colombia/i.test(rawCountry)) countryName = 'Colombia';
-    else if (/Brazil|Brasil/i.test(rawCountry)) countryName = 'Brasil';
-    else if (/Japan/i.test(rawCountry)) countryName = 'Japón';
-    else if (/Mexico|México/i.test(rawCountry)) countryName = 'México';
-
-    regionBadge = `Sismo en ${countryName}`;
-  } else {
-    regionBadge = 'Sismo Internacional';
+  for (const dep of peruDepartments) {
+    if (new RegExp(`\\b${dep}\\b`, 'i').test(rawPlace)) {
+      regionBadge = `Región ${dep}`;
+      break;
+    }
   }
 
-  return { translatedPlace: title, regionBadge };
+  return { translatedPlace: translated, regionBadge };
+}
+
+function formatPeruDateTime(isoOrEpoch) {
+  try {
+    const d = new Date(isoOrEpoch);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('es-PE', {
+      timeZone: 'America/Lima',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+  } catch (e) {
+    return '';
+  }
+}
+
+function formatTimeAgo(isoOrEpoch) {
+  try {
+    const diffMs = Date.now() - new Date(isoOrEpoch).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Hace un momento';
+    if (diffMins < 60) return `Hace ${diffMins} min`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `Hace ${diffHours} h`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `Hace ${diffDays} d`;
+  } catch (e) {
+    return '';
+  }
 }
 
 function getIntensityDescription(mag, distKm) {
-  if (distKm < 50) {
-    if (mag >= 6.0) return 'Intensidad Fuerte a Muy Fuerte (Sensación sísmica severa en tu posición).';
-    if (mag >= 4.5) return 'Intensidad Moderada (Vibración clara de ventanas y objetos).';
-    return 'Intensidad Leve (Sensación vibratoria leve).';
-  } else if (distKm < 250) {
-    if (mag >= 6.0) return 'Intensidad Moderada a Fuerte (Movimiento oscilatorio perceptible).';
-    if (mag >= 4.5) return 'Intensidad Leve (Movimiento suave en pisos altos).';
-    return 'Casi imperceptible a esta distancia.';
-  } else {
-    if (mag >= 6.5) return 'Leve oscilación lejana perceptible.';
-    return 'Imperceptible a esta distancia.';
-  }
-}
-
-function formatPeruDateTime(timestamp) {
-  if (!timestamp) return '';
-  const date = new Date(timestamp);
-  return date.toLocaleString('es-PE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-}
-
-function formatTimeAgo(timestamp) {
-  const diffSecs = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
-  if (diffSecs < 60) return 'Hace un momento';
-  const diffMins = Math.floor(diffSecs / 60);
-  if (diffMins < 60) return `Hace ${diffMins}m`;
-  const hours = Math.floor(diffMins / 60);
-  if (hours < 24) return `Hace ${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `Hace ${days}d`;
+  if (mag >= 7.0 && distKm < 150) return 'Muy Fuerte (Potencial Destructivo)';
+  if (mag >= 6.0 && distKm < 100) return 'Fuerte (Sacudida Severa)';
+  if (mag >= 5.0 && distKm < 80) return 'Moderado (Claramente Sentido)';
+  if (distKm < 50) return 'Sentido Leve en Epicentro';
+  return 'No percibido en tu zona';
 }
