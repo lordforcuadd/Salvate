@@ -1,0 +1,144 @@
+import { defineStore } from 'pinia';
+import { saveDBItem, clearDBStore, masterDeleteWholeDB } from '../services/db';
+import { useMeshStore } from './meshStore';
+
+export const useAuthStore = defineStore('auth', {
+  state: () => ({
+    user: null,
+    isAuthenticated: false,
+    isOnline: navigator.onLine,
+  }),
+
+  getters: {
+    userName: (state) => state.user?.name || '',
+    userStatus: (state) => state.user?.status || 'A salvo',
+    userId: (state) => state.user?.id || '',
+    userCoords: (state) => state.user?.coords || null,
+  },
+
+  actions: {
+    initAuth() {
+      if (this._initialized) return;
+      this._initialized = true;
+
+      window.addEventListener('online', () => this.isOnline = true);
+      window.addEventListener('offline', () => this.isOnline = false);
+
+      window.addEventListener('storage', (e) => {
+        if (e.key === 'salvate_current_user' && e.newValue) {
+          try {
+            this.user = JSON.parse(e.newValue);
+            this.isAuthenticated = true;
+          } catch (err) {}
+        }
+      });
+
+      const savedUser = localStorage.getItem('salvate_current_user');
+      if (savedUser) {
+        try {
+          this.user = JSON.parse(savedUser);
+          this.isAuthenticated = true;
+          saveDBItem('users', this.user);
+        } catch (e) {
+          console.error('Error parsing stored user:', e);
+        }
+      }
+    },
+
+    loginWithName(name) {
+      if (!name || !name.trim()) return false;
+      const cleanName = name.trim();
+      const hash = Math.random().toString(36).substring(2, 8);
+      const id = `salvate-${cleanName.toLowerCase().replace(/\s+/g, '_')}-${hash}`;
+
+      const newUser = {
+        id,
+        name: cleanName,
+        status: 'A salvo',
+        coords: null,
+        updatedAt: new Date().toISOString(),
+      };
+
+      this.user = newUser;
+      this.isAuthenticated = true;
+
+      localStorage.setItem('salvate_current_user', JSON.stringify(newUser));
+      saveDBItem('users', newUser);
+      return true;
+    },
+
+    updateUserStatus(status, coords = null) {
+      if (!this.user) return;
+
+      const nowIso = new Date().toISOString();
+      this.user.status = status;
+      if (coords) {
+        this.user.coords = coords;
+      }
+      this.user.updatedAt = nowIso;
+
+      localStorage.setItem('salvate_current_user', JSON.stringify(this.user));
+      saveDBItem('users', this.user);
+
+      const meshStore = useMeshStore();
+      const existingIdx = meshStore.users.findIndex(u => u.id === this.user.id);
+      if (existingIdx >= 0) {
+        meshStore.users.splice(existingIdx, 1, { ...this.user });
+      } else {
+        meshStore.users.unshift({ ...this.user });
+      }
+
+      localStorage.setItem('salvate_users_update', Date.now().toString());
+    },
+
+    setUserCoords(coords) {
+      if (!this.user) return;
+      this.user.coords = coords;
+      localStorage.setItem('salvate_current_user', JSON.stringify(this.user));
+      saveDBItem('users', this.user);
+      
+      const meshStore = useMeshStore();
+      const existingIdx = meshStore.users.findIndex(u => u.id === this.user.id);
+      if (existingIdx >= 0) {
+        meshStore.users.splice(existingIdx, 1, { ...this.user });
+      }
+      localStorage.setItem('salvate_users_update', Date.now().toString());
+    },
+
+    logout() {
+      this.user = null;
+      this.isAuthenticated = false;
+      localStorage.removeItem('salvate_current_user');
+    },
+
+    async resetAllData() {
+      const meshStore = useMeshStore();
+      
+      // Notify remote P2P peers that this user account was deleted
+      if (this.user) {
+        const deletePayload = { type: 'USER_DELETED', userId: this.user.id };
+        if (meshStore.broadcastChannel) {
+          try { meshStore.broadcastChannel.postMessage(deletePayload); } catch (e) {}
+        }
+        meshStore.peerConnections.forEach(conn => {
+          if (conn && conn.open) {
+            try { conn.send(deletePayload); } catch (e) {}
+          }
+        });
+      }
+
+      this.user = null;
+      this.isAuthenticated = false;
+      localStorage.clear();
+      sessionStorage.clear();
+      await masterDeleteWholeDB();
+      await clearDBStore('users');
+      await clearDBStore('broadcast_messages');
+      await clearDBStore('status_history');
+      await clearDBStore('medical_vault');
+      await clearDBStore('checklists');
+      await clearDBStore('hazard_reports');
+      window.location.reload();
+    }
+  }
+});

@@ -1,0 +1,147 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-canvas: #09090b;
+    --bg-surface-1: #121215;
+    --bg-surface-2: #18181b;
+    --bg-surface-3: #27272a;
+    
+    --color-safe: #10b981;
+    --color-safe-bg: rgba(16, 185, 129, 0.14);
+    --color-safe-border: rgba(16, 185, 129, 0.35);
+    
+    --color-transit: #14b8a6;
+    --color-transit-bg: rgba(20, 184, 166, 0.14);
+    --color-transit-border: rgba(20, 184, 166, 0.35);
+    
+    --color-danger: #f43f5e;
+    --color-danger-bg: rgba(244, 63, 94, 0.15);
+    --color-danger-border: rgba(244, 63, 94, 0.4);
+    
+    --color-warning: #f59e0b;
+    --color-warning-bg: rgba(245, 158, 11, 0.14);
+    --color-warning-border: rgba(245, 158, 11, 0.35);
+
+    --color-medical: #10b981;
+    --color-medical-bg: rgba(16, 185, 129, 0.14);
+    --color-medical-border: rgba(16, 185, 129, 0.35);
+
+    --color-p2p: #10b981;
+    --color-p2p-bg: rgba(16, 185, 129, 0.14);
+    --color-p2p-border: rgba(16, 185, 129, 0.35);
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: #f4f4f5;
+    font-family: 'Outfit', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
+/* Custom Sleek Tactical Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Surface Cards & Containers (Black + Emerald Glow Tone) */
+.surface-card {
+  background: #121215;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+}
+
+.glass-card {
+  background: rgba(18, 18, 21, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.6);
+}
+
+/* Responsive Touch Button Base */
+.touch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  border-radius: 0.875rem;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.touch-btn:active {
+  transform: scale(0.97);
+}
+
+.touch-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Leaflet Map Overrides */
+.leaflet-container {
+  background-color: #09090b !important;
+  border-radius: 1rem;
+  font-family: inherit !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background-color: #121215 !important;
+  color: #f4f4f5 !important;
+  border-radius: 0.875rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7) !important;
+}
+
+.leaflet-popup-tip {
+  background-color: #121215 !important;
+}
+
+/* Subtle Alert Pulse */
+@keyframes subtle-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scale(1.015);
+  }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom Scrollbar None */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

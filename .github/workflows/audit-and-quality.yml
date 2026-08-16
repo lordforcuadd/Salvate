@@ -1,0 +1,42 @@
+name: Sálvate PWA — Auditoría y Calidad Continua
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  audit_and_validate:
+    name: 🔍 Auditoría de Código, Build & Resiliencia
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Clonar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ⚙️ Configurar Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🔍 Ejecutar Motor de Auditoría Sálvate
+        run: npm run audit
+
+      - name: 🏗️ Validar Compilación de Producción (Vite Build)
+        run: npm run build
+
+      - name: 📊 Publicar Reporte de Auditoría
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report
+          path: AUDIT_REPORT.json
+          retention-days: 14
