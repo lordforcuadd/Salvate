@@ -9,16 +9,16 @@
         </div>
         <div class="min-w-0 flex-1">
           <h3 class="text-sm sm:text-base font-black text-zinc-100 truncate">Directorio de Contactos</h3>
-          <p class="text-[11px] sm:text-xs text-zinc-400 truncate">Personas vinculadas en la red P2P local</p>
+          <p class="text-[11px] sm:text-xs text-zinc-400 truncate">Red de ayuda mutua & auxilio P2P</p>
         </div>
       </div>
 
       <!-- Action Buttons Row -->
-      <div class="flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-end">
+      <div class="flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-end flex-wrap">
         <button 
           type="button"
           class="h-9 px-2.5 sm:px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold flex flex-row items-center justify-center gap-1.5 transition-all border border-zinc-800 cursor-pointer active:scale-95 shrink-0"
-          title="Limpiar cuentas inactivas de sesiones previas"
+          title="Limpiar contactos inactivos (>3 min)"
           @click="confirmCleanupInactives"
         >
           <RefreshCw class="w-3.5 h-3.5 text-zinc-400 shrink-0" />
@@ -28,9 +28,9 @@
         <button 
           type="button"
           class="h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black flex flex-row items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
-          @click="showConnectModal = true"
+          @click="openConnectModal"
         >
-          <Link class="w-3.5 h-3.5 shrink-0" />
+          <QrCode class="w-3.5 h-3.5 shrink-0" />
           <span>Vincular Celular</span>
         </button>
       </div>
@@ -59,9 +59,9 @@
         <button 
           type="button"
           class="h-11 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs sm:text-sm inline-flex flex-row items-center justify-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap"
-          @click="showConnectModal = true"
+          @click="openConnectModal"
         >
-          <Link class="w-4 h-4 shrink-0" />
+          <QrCode class="w-4 h-4 shrink-0" />
           <span>Vincular Segundo Celular Ahora</span>
         </button>
       </div>
@@ -117,58 +117,299 @@
       </div>
     </div>
 
-    <!-- Connect / Link Device Modal -->
+    <!-- Enhanced Linking & Discovery Modal (Black & Emerald) -->
     <AppModal
       v-model="showConnectModal"
-      title="Vincular Dispositivo P2P"
+      title="Vincular Dispositivos P2P"
       subtitle="Conexión directa entre celulares sin servidores centrales"
-      max-width="md"
+      max-width="lg"
     >
       <template #header-icon>
         <div class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-          <Link class="w-5 h-5" />
+          <QrCode class="w-5 h-5" />
         </div>
       </template>
 
-      <div class="space-y-4 text-xs">
-        <div class="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1.5">
-          <span class="font-bold text-emerald-400 block text-xs">Tu ID de este dispositivo:</span>
-          <div class="flex items-center justify-between gap-2 bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
-            <code class="text-zinc-100 font-mono text-xs select-all break-all">{{ authStore.userId }}</code>
-            <button 
-              type="button"
-              class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold shrink-0 cursor-pointer whitespace-nowrap"
-              @click="copyOwnId"
-            >
-              {{ copiedId ? '¡Copiado!' : 'Copiar' }}
-            </button>
-          </div>
-          <p class="text-[11px] text-zinc-400 mt-1">Copia este ID y pégalo en el segundo celular para conectarlos directamente.</p>
+      <div class="space-y-4">
+        
+        <!-- Navigation Tabs for Connection Modes -->
+        <div class="grid grid-cols-3 gap-1.5 p-1 bg-zinc-950 rounded-2xl border border-zinc-800 text-xs">
+          <button
+            type="button"
+            :class="[
+              'py-2 px-2 rounded-xl font-bold transition-all text-center cursor-pointer active:scale-95 truncate',
+              activePairTab === 'qr_offline' ? 'bg-emerald-500 text-zinc-950 shadow' : 'text-zinc-400 hover:text-zinc-200'
+            ]"
+            @click="activePairTab = 'qr_offline'"
+          >
+            Offline por QR
+          </button>
+
+          <button
+            type="button"
+            :class="[
+              'py-2 px-2 rounded-xl font-bold transition-all text-center cursor-pointer active:scale-95 truncate',
+              activePairTab === 'direct_id' ? 'bg-emerald-500 text-zinc-950 shadow' : 'text-zinc-400 hover:text-zinc-200'
+            ]"
+            @click="activePairTab = 'direct_id'"
+          >
+            Por ID Directo
+          </button>
+
+          <button
+            type="button"
+            :class="[
+              'py-2 px-2 rounded-xl font-bold transition-all text-center cursor-pointer active:scale-95 truncate',
+              activePairTab === 'local_lan' ? 'bg-emerald-500 text-zinc-950 shadow' : 'text-zinc-400 hover:text-zinc-200'
+            ]"
+            @click="activePairTab = 'local_lan'"
+          >
+            Servidor Local
+          </button>
         </div>
 
-        <AppInput
-          v-model="targetInputId"
-          label="Ingresa el ID del otro celular"
-          placeholder="Ej. salvate-carlos_perez-k4m8p1"
-          required
-        />
+        <!-- TAB 1: 100% OFFLINE QR WEB RTC PAIRING (ZERO SERVERS / ZERO INTERNET) -->
+        <div v-if="activePairTab === 'qr_offline'" class="space-y-3.5">
+          
+          <div class="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex items-start gap-2.5 text-xs text-emerald-200">
+            <WifiOff class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div class="space-y-1 min-w-0">
+              <p class="font-black text-emerald-300">Emparejamiento 100% Sin Internet ni Servidores</p>
+              <p class="text-[11px] opacity-90 leading-relaxed">
+                Intercambia los códigos QR entre ambos celulares conectados al mismo WiFi o punto de acceso (hotspot). WebRTC enlazará los dispositivos directamente.
+              </p>
+            </div>
+          </div>
+
+          <!-- Step Selector -->
+          <div class="flex items-center justify-between gap-2 p-1 bg-zinc-950 rounded-xl border border-zinc-800 text-[11px] font-bold">
+            <button
+              type="button"
+              :class="['flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer', qrStep === 'offer' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
+              @click="prepareOfferStep"
+            >
+              1. Celular A (Generar)
+            </button>
+            <button
+              type="button"
+              :class="['flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer', qrStep === 'answer' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
+              @click="qrStep = 'answer'"
+            >
+              2. Celular B (Responder)
+            </button>
+            <button
+              type="button"
+              :class="['flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer', qrStep === 'confirm' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
+              @click="qrStep = 'confirm'"
+            >
+              3. Celular A (Completar)
+            </button>
+          </div>
+
+          <!-- STEP 1: CELULAR A GENERATES OFFER -->
+          <div v-if="qrStep === 'offer'" class="space-y-3 p-3.5 bg-zinc-950 rounded-2xl border border-zinc-800">
+            <div class="text-center space-y-1">
+              <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 1: Muestra este código QR al Celular B</h4>
+              <p class="text-[11px] text-zinc-400">Pide al otro celular que seleccione la pestaña "2. Celular B (Responder)".</p>
+            </div>
+
+            <!-- QR SVG Canvas -->
+            <div v-if="generatedOfferToken" class="flex flex-col items-center justify-center p-2 bg-white rounded-2xl max-w-[220px] mx-auto shadow-xl">
+              <div v-html="offerQrSvg" class="w-full h-auto"></div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="flex-1 h-9 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold transition-all cursor-pointer active:scale-95"
+                @click="copyOfferToken"
+              >
+                {{ copiedOffer ? '¡Código Copiado!' : 'Copiar Código de Texto' }}
+              </button>
+
+              <button
+                type="button"
+                class="h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black transition-all cursor-pointer active:scale-95"
+                @click="prepareOfferStep"
+              >
+                Regenerar
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 2: CELULAR B ENTERS/SCANS OFFER AND REPLIES -->
+          <div v-if="qrStep === 'answer'" class="space-y-3 p-3.5 bg-zinc-950 rounded-2xl border border-zinc-800">
+            <div class="space-y-1">
+              <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 2: Pega el código del Celular A</h4>
+              <p class="text-[11px] text-zinc-400">Pega aquí el código que te compartió el Celular A para generar tu respuesta.</p>
+            </div>
+
+            <textarea
+              v-model="inputOfferToken"
+              rows="3"
+              class="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-[11px] focus:border-emerald-500 focus:outline-none resize-none"
+              placeholder='Pega aquí el código SALVATE_OFFER...'
+            ></textarea>
+
+            <button
+              type="button"
+              :disabled="!inputOfferToken.trim() || isProcessingAnswer"
+              class="w-full h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+              @click="generateAnswerFromOffer"
+            >
+              <CheckCircle2 class="w-4 h-4" />
+              <span>Generar Código de Respuesta QR</span>
+            </button>
+
+            <!-- Display Generated Answer QR -->
+            <div v-if="generatedAnswerToken" class="pt-2 border-t border-zinc-800 space-y-2 text-center">
+              <p class="text-[11px] font-bold text-emerald-400">¡Respuesta Lista! Muéstrasela al Celular A:</p>
+              <div class="flex flex-col items-center justify-center p-2 bg-white rounded-2xl max-w-[200px] mx-auto shadow-xl">
+                <div v-html="answerQrSvg" class="w-full h-auto"></div>
+              </div>
+              <button
+                type="button"
+                class="w-full h-8 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs font-bold cursor-pointer active:scale-95"
+                @click="copyAnswerToken"
+              >
+                {{ copiedAnswer ? '¡Respuesta Copiada!' : 'Copiar Código de Respuesta' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 3: CELULAR A APPLIES ANSWER -->
+          <div v-if="qrStep === 'confirm'" class="space-y-3 p-3.5 bg-zinc-950 rounded-2xl border border-zinc-800">
+            <div class="space-y-1">
+              <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 3: Completa el Enlace en el Celular A</h4>
+              <p class="text-[11px] text-zinc-400">Pega aquí el código de respuesta del Celular B para abrir el canal de datos.</p>
+            </div>
+
+            <textarea
+              v-model="inputAnswerToken"
+              rows="3"
+              class="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-[11px] focus:border-emerald-500 focus:outline-none resize-none"
+              placeholder='Pega aquí el código SALVATE_ANSWER...'
+            ></textarea>
+
+            <button
+              type="button"
+              :disabled="!inputAnswerToken.trim() || isFinalizing"
+              class="w-full h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+              @click="finalizeOfflinePairing"
+            >
+              <Zap class="w-4 h-4" />
+              <span>Completar y Activar Enlace P2P</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- TAB 2: DIRECT ID PAIRING (CLOUD / LOCAL BROKER) -->
+        <div v-if="activePairTab === 'direct_id'" class="space-y-4 text-xs">
+          <div class="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1.5">
+            <span class="font-bold text-emerald-400 block text-xs">Tu ID en este dispositivo:</span>
+            <div class="flex items-center justify-between gap-2 bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
+              <code class="text-zinc-100 font-mono text-xs select-all break-all">{{ authStore.userId }}</code>
+              <button 
+                type="button"
+                class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold shrink-0 cursor-pointer active:scale-95 whitespace-nowrap"
+                @click="copyOwnId"
+              >
+                {{ copiedId ? '¡Copiado!' : 'Copiar' }}
+              </button>
+            </div>
+            <p class="text-[11px] text-zinc-400 mt-1">Ingresa este ID en el segundo celular para vincularlos automáticamente.</p>
+          </div>
+
+          <AppInput
+            v-model="targetInputId"
+            label="Ingresa el ID del otro celular"
+            placeholder="Ej. salvate-carlos_perez-k4m8p1"
+            required
+          />
+
+          <button 
+            type="button" 
+            :disabled="!targetInputId.trim()" 
+            class="w-full h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs shadow-md transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+            @click="connectTargetDevice"
+          >
+            Conectar Dispositivos por ID
+          </button>
+        </div>
+
+        <!-- TAB 3: LOCAL LAN SIGNALING SERVER (COMMUNITY DISASTER SHELTER KIT) -->
+        <div v-if="activePairTab === 'local_lan'" class="space-y-3.5 text-xs">
+          <div class="p-3 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1.5 text-zinc-300 text-xs">
+            <div class="flex items-center gap-2 text-amber-400 font-bold">
+              <Radio class="w-4 h-4 shrink-0" />
+              <span>Modo Albergue / Servidor Local Comunitario</span>
+            </div>
+            <p class="text-[11px] text-zinc-400 leading-relaxed">
+              Si tu albergue o centro de acopio cuenta con un router o Raspberry Pi ejecutando <code>peerjs-server</code> local, ingresa la IP aquí para vincular automáticamente todos los celulares de la red local sin internet.
+            </p>
+          </div>
+
+          <div class="space-y-3 p-3.5 bg-zinc-950 rounded-2xl border border-zinc-800">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-zinc-200">Usar Servidor LAN Local:</span>
+              <input 
+                type="checkbox" 
+                v-model="localServerForm.isCustom"
+                class="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+              />
+            </div>
+
+            <div v-if="localServerForm.isCustom" class="space-y-2.5 pt-2 border-t border-zinc-800">
+              <AppInput
+                v-model="localServerForm.host"
+                label="IP o Host del Servidor Local"
+                placeholder="Ej. 192.168.1.100 o 192.168.9.100"
+              />
+
+              <div class="grid grid-cols-2 gap-2">
+                <AppInput
+                  v-model="localServerForm.port"
+                  label="Puerto"
+                  placeholder="9000"
+                />
+                <AppInput
+                  v-model="localServerForm.path"
+                  label="Ruta (Path)"
+                  placeholder="/"
+                />
+              </div>
+
+              <div class="flex items-center gap-2 pt-1">
+                <input 
+                  type="checkbox" 
+                  id="secure-check"
+                  v-model="localServerForm.secure"
+                  class="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                />
+                <label for="secure-check" class="text-xs text-zinc-300 cursor-pointer font-medium">Conexión HTTPS/SSL segura</label>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="w-full h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-all cursor-pointer active:scale-95"
+              @click="saveLocalServerSettings"
+            >
+              Guardar y Reconectar
+            </button>
+          </div>
+        </div>
+
       </div>
 
       <template #footer>
         <button 
           type="button" 
-          class="h-10 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs transition-all cursor-pointer whitespace-nowrap"
+          class="h-10 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
           @click="showConnectModal = false"
         >
-          Cancelar
-        </button>
-        <button 
-          type="button" 
-          :disabled="!targetInputId.trim()" 
-          class="h-10 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs shadow-md transition-all cursor-pointer whitespace-nowrap"
-          @click="connectTargetDevice"
-        >
-          Conectar Dispositivos
+          Cerrar
         </button>
       </template>
     </AppModal>
@@ -177,26 +418,150 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useMeshStore } from '../stores/meshStore';
 import { useAuthStore } from '../stores/authStore';
 import { useDialogStore } from '../stores/dialogStore';
 import AppBadge from './ui/AppBadge.vue';
 import AppModal from './ui/AppModal.vue';
 import AppInput from './ui/AppInput.vue';
-import { Users, Clock, Radio, Link, RefreshCw } from 'lucide-vue-next';
+import { generateQRCodeSVG } from '../utils/qrcode';
+import { 
+  Users, 
+  Clock, 
+  Radio, 
+  Link, 
+  RefreshCw, 
+  QrCode, 
+  WifiOff, 
+  CheckCircle2, 
+  Zap 
+} from 'lucide-vue-next';
 
 const meshStore = useMeshStore();
 const authStore = useAuthStore();
 const dialogStore = useDialogStore();
 
 const showConnectModal = ref(false);
+const activePairTab = ref('qr_offline'); // 'qr_offline' | 'direct_id' | 'local_lan'
+
+// QR Offline State
+const qrStep = ref('offer'); // 'offer' | 'answer' | 'confirm'
+const generatedOfferToken = ref('');
+const inputOfferToken = ref('');
+const generatedAnswerToken = ref('');
+const inputAnswerToken = ref('');
+const isProcessingAnswer = ref(false);
+const isFinalizing = ref(false);
+const copiedOffer = ref(false);
+const copiedAnswer = ref(false);
+
+// Direct ID State
 const targetInputId = ref('');
 const copiedId = ref(false);
+
+// Local Server State
+const localServerForm = ref({
+  isCustom: meshStore.signalingServer?.isCustom || false,
+  host: meshStore.signalingServer?.host || '192.168.1.100',
+  port: meshStore.signalingServer?.port || 9000,
+  path: meshStore.signalingServer?.path || '/',
+  secure: meshStore.signalingServer?.secure || false
+});
+
+const offerQrSvg = computed(() => {
+  if (!generatedOfferToken.value) return '';
+  return generateQRCodeSVG(generatedOfferToken.value, 200);
+});
+
+const answerQrSvg = computed(() => {
+  if (!generatedAnswerToken.value) return '';
+  return generateQRCodeSVG(generatedAnswerToken.value, 180);
+});
 
 onMounted(() => {
   meshStore.reloadFromDB();
 });
+
+const openConnectModal = () => {
+  showConnectModal.value = true;
+  if (activePairTab.value === 'qr_offline') {
+    prepareOfferStep();
+  }
+};
+
+const prepareOfferStep = async () => {
+  qrStep.value = 'offer';
+  try {
+    if (authStore.user) {
+      generatedOfferToken.value = await meshStore.createOfflineManualOffer(authStore.user);
+    }
+  } catch (e) {
+    console.error('Error preparing offer:', e);
+  }
+};
+
+const copyOfferToken = async () => {
+  if (!generatedOfferToken.value) return;
+  try {
+    await navigator.clipboard.writeText(generatedOfferToken.value);
+    copiedOffer.value = true;
+    setTimeout(() => copiedOffer.value = false, 2000);
+  } catch (e) {}
+};
+
+const generateAnswerFromOffer = async () => {
+  if (!inputOfferToken.value.trim() || !authStore.user) return;
+  isProcessingAnswer.value = true;
+  try {
+    generatedAnswerToken.value = await meshStore.createOfflineManualAnswer(inputOfferToken.value.trim(), authStore.user);
+    dialogStore.alert({
+      title: 'Respuesta Generada',
+      message: 'Código de respuesta generado. Muéstraselo al Celular A para completar la vinculación.',
+      variant: 'safe'
+    });
+  } catch (err) {
+    dialogStore.alert({
+      title: 'Código Inválido',
+      message: err.message || 'No se pudo procesar la oferta. Asegúrate de copiar el código completo.',
+      variant: 'warning'
+    });
+  } finally {
+    isProcessingAnswer.value = false;
+  }
+};
+
+const copyAnswerToken = async () => {
+  if (!generatedAnswerToken.value) return;
+  try {
+    await navigator.clipboard.writeText(generatedAnswerToken.value);
+    copiedAnswer.value = true;
+    setTimeout(() => copiedAnswer.value = false, 2000);
+  } catch (e) {}
+};
+
+const finalizeOfflinePairing = async () => {
+  if (!inputAnswerToken.value.trim()) return;
+  isFinalizing.value = true;
+  try {
+    const res = await meshStore.applyOfflineManualAnswer(inputAnswerToken.value.trim());
+    dialogStore.alert({
+      title: '¡Enlace Offline Establecido!',
+      message: `Te has vinculado directamente con "${res.remotePeerName || 'el otro dispositivo'}" sin necesidad de internet.`,
+      variant: 'safe'
+    });
+    showConnectModal.value = false;
+    inputAnswerToken.value = '';
+  } catch (err) {
+    dialogStore.alert({
+      title: 'Error de Vinculación',
+      message: err.message || 'No se pudo completar el enlace. Verifica que la respuesta corresponda a tu oferta actual.',
+      variant: 'warning'
+    });
+  } finally {
+    isFinalizing.value = false;
+  }
+};
 
 const copyOwnId = async () => {
   try {
@@ -214,10 +579,21 @@ const connectTargetDevice = async () => {
   showConnectModal.value = false;
 };
 
+const saveLocalServerSettings = () => {
+  meshStore.updateSignalingServer(localServerForm.value, authStore.user);
+  dialogStore.alert({
+    title: 'Servidor Actualizado',
+    message: localServerForm.value.isCustom 
+      ? `Conectando al servidor local ${localServerForm.value.host}:${localServerForm.value.port}...`
+      : 'Configuración restaurada al servidor predeterminado.',
+    variant: 'safe'
+  });
+};
+
 const confirmCleanupInactives = () => {
   dialogStore.confirm({
     title: '¿Limpiar contactos inactivos?',
-    message: 'Esta acción removerá del directorio los contactos de sesiones previas que no hayan enviado actualizaciones recientes.',
+    message: 'Esta acción removerá del directorio únicamente los contactos que lleven más de 3 minutos sin enviar señales de vida.',
     confirmText: 'Limpiar Inactivos',
     cancelText: 'Cancelar',
     variant: 'warning',

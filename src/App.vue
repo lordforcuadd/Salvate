@@ -32,7 +32,7 @@
 
         <button 
           type="button"
-          class="text-xs opacity-60 hover:opacity-100 font-black shrink-0 p-1 cursor-pointer"
+          class="text-xs opacity-60 hover:opacity-100 font-black shrink-0 p-1 cursor-pointer active:scale-95"
           @click="meshStore.dismissNotification(n.id)"
         >
           ✕

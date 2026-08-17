@@ -3,6 +3,22 @@ import { Peer } from 'peerjs';
 import { saveDBItem, getAllDBItems, deleteDBItem } from '../services/db';
 import { useAuthStore } from './authStore';
 
+function compressSDP(sdp) {
+  try {
+    return btoa(unescape(encodeURIComponent(sdp)));
+  } catch (e) {
+    return btoa(sdp);
+  }
+}
+
+function decompressSDP(b64) {
+  try {
+    return decodeURIComponent(escape(atob(b64)));
+  } catch (e) {
+    return atob(b64);
+  }
+}
+
 export const useMeshStore = defineStore('mesh', {
   state: () => ({
     peerInstance: null,
@@ -16,7 +32,16 @@ export const useMeshStore = defineStore('mesh', {
     broadcastChannel: null,
     isOnlineMode: typeof navigator !== 'undefined' ? navigator.onLine : true,
     pollInterval: null,
-    reconnectTimeout: null
+    reconnectTimeout: null,
+    // Configurable Local Signaling (Community shelter / router / Raspberry Pi mode)
+    signalingServer: JSON.parse(
+      (typeof localStorage !== 'undefined' && localStorage.getItem('salvate_signaling_server')) ||
+      '{"isCustom":false,"host":"0.peerjs.com","port":443,"path":"/","secure":true}'
+    ),
+    // Manual QR WebRTC pairing handles
+    manualOfferPC: null,
+    manualAnswerPC: null,
+    manualDataChannel: null
   }),
 
   getters: {
@@ -97,6 +122,14 @@ export const useMeshStore = defineStore('mesh', {
         try { this.peerInstance.destroy(); } catch (e) {}
         this.peerInstance = null;
       }
+      if (this.manualOfferPC) {
+        try { this.manualOfferPC.close(); } catch (e) {}
+        this.manualOfferPC = null;
+      }
+      if (this.manualAnswerPC) {
+        try { this.manualAnswerPC.close(); } catch (e) {}
+        this.manualAnswerPC = null;
+      }
       this.isP2PActive = false;
       this.activePeersCount = 0;
     },
@@ -147,6 +180,14 @@ export const useMeshStore = defineStore('mesh', {
       });
     },
 
+    updateSignalingServer(config, currentUser = null) {
+      this.signalingServer = { ...config };
+      localStorage.setItem('salvate_signaling_server', JSON.stringify(this.signalingServer));
+      if (currentUser) {
+        this.setupWebRTCPeer(currentUser);
+      }
+    },
+
     setupWebRTCPeer(currentUser) {
       try {
         const cleanPeerId = currentUser.id.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -155,20 +196,24 @@ export const useMeshStore = defineStore('mesh', {
           try { this.peerInstance.destroy(); } catch (e) {}
         }
 
+        const isCustom = this.signalingServer?.isCustom;
+        const host = isCustom ? this.signalingServer.host : '0.peerjs.com';
+        const port = isCustom ? Number(this.signalingServer.port) : 443;
+        const path = isCustom ? (this.signalingServer.path || '/') : '/';
+        const secure = isCustom ? Boolean(this.signalingServer.secure) : true;
+
         this.peerInstance = new Peer(cleanPeerId, {
-          host: '0.peerjs.com',
-          port: 443,
-          path: '/',
-          secure: true,
+          host,
+          port,
+          path,
+          secure,
           pingInterval: 10000,
           debug: 0,
-          config: {
+          config: isCustom ? { iceServers: [] } : {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' },
               { urls: 'stun:stun2.l.google.com:19302' },
-              { urls: 'stun:stun3.l.google.com:19302' },
-              { urls: 'stun:stun4.l.google.com:19302' },
               { urls: 'stun:global.stun.twilio.com:3478' }
             ]
           }
@@ -180,12 +225,15 @@ export const useMeshStore = defineStore('mesh', {
         });
 
         this.peerInstance.on('disconnected', () => {
-          if (this.peerInstance && !this.peerInstance.destroyed && navigator.onLine) {
+          if (this.peerInstance && !this.peerInstance.destroyed) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = setTimeout(() => {
               try {
-                if (this.peerInstance && this.peerInstance.disconnected && navigator.onLine) {
-                  this.peerInstance.reconnect();
+                if (this.peerInstance && this.peerInstance.disconnected) {
+                  // Reconnect allowed online OR if local community host is configured
+                  if (navigator.onLine || this.signalingServer?.isCustom) {
+                    this.peerInstance.reconnect();
+                  }
                 }
               } catch (e) {}
             }, 10000);
@@ -201,8 +249,10 @@ export const useMeshStore = defineStore('mesh', {
           if (err.type === 'network' || err.type === 'disconnected' || err.type === 'server-error' || err.type === 'socket-error') {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = setTimeout(() => {
-              if (this.peerInstance && !this.peerInstance.destroyed && this.peerInstance.disconnected && navigator.onLine) {
-                try { this.peerInstance.reconnect(); } catch (e) {}
+              if (this.peerInstance && !this.peerInstance.destroyed && this.peerInstance.disconnected) {
+                if (navigator.onLine || this.signalingServer?.isCustom) {
+                  try { this.peerInstance.reconnect(); } catch (e) {}
+                }
               }
             }, 15000);
           }
@@ -283,14 +333,240 @@ export const useMeshStore = defineStore('mesh', {
       });
     },
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🌐 EMPAREJAMIENTO DIRECTO MANUAL VÍA CÓDIGO QR (OFFLINE PURO 100% SIN SERVIDOR)
+    // ─────────────────────────────────────────────────────────────────────────
+    async createOfflineManualOffer(currentUser) {
+      try {
+        if (this.manualOfferPC) {
+          try { this.manualOfferPC.close(); } catch (e) {}
+          this.manualOfferPC = null;
+        }
+
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        this.manualOfferPC = pc;
+
+        const dc = pc.createDataChannel('salvate_offline_mesh', { ordered: true });
+        this.manualDataChannel = dc;
+
+        dc.onopen = () => {
+          this.bindManualDataChannel(dc, pc, currentUser);
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === 'complete') {
+            resolve();
+          } else {
+            const check = () => {
+              if (pc.iceGatheringState === 'complete') {
+                pc.removeEventListener('icegatheringstatechange', check);
+                resolve();
+              }
+            };
+            pc.addEventListener('icegatheringstatechange', check);
+            setTimeout(resolve, 800);
+          }
+        });
+
+        const offerPayload = {
+          t: 'SALVATE_OFFER',
+          v: 1,
+          uid: currentUser.id,
+          name: currentUser.name,
+          sdp: compressSDP(pc.localDescription.sdp)
+        };
+
+        return JSON.stringify(offerPayload);
+      } catch (err) {
+        console.error('Error creating offline manual offer:', err);
+        throw err;
+      }
+    },
+
+    async createOfflineManualAnswer(offerTokenStr, currentUser) {
+      try {
+        if (this.manualAnswerPC) {
+          try { this.manualAnswerPC.close(); } catch (e) {}
+          this.manualAnswerPC = null;
+        }
+
+        let offerData = null;
+        try {
+          offerData = typeof offerTokenStr === 'object' ? offerTokenStr : JSON.parse(offerTokenStr.trim());
+        } catch (e) {
+          throw new Error('Formato de código inválido.');
+        }
+
+        if (!offerData || offerData.t !== 'SALVATE_OFFER') {
+          throw new Error('El código no corresponde a una oferta de vinculación Sálvate válida.');
+        }
+
+        const rawSdp = decompressSDP(offerData.sdp);
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        this.manualAnswerPC = pc;
+
+        pc.ondatachannel = (e) => {
+          this.bindManualDataChannel(e.channel, pc, currentUser, offerData.uid, offerData.name);
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription({
+          type: 'offer',
+          sdp: rawSdp
+        }));
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === 'complete') {
+            resolve();
+          } else {
+            const check = () => {
+              if (pc.iceGatheringState === 'complete') {
+                pc.removeEventListener('icegatheringstatechange', check);
+                resolve();
+              }
+            };
+            pc.addEventListener('icegatheringstatechange', check);
+            setTimeout(resolve, 800);
+          }
+        });
+
+        const answerPayload = {
+          t: 'SALVATE_ANSWER',
+          v: 1,
+          uid: currentUser.id,
+          name: currentUser.name,
+          sdp: compressSDP(pc.localDescription.sdp)
+        };
+
+        return JSON.stringify(answerPayload);
+      } catch (err) {
+        console.error('Error creating offline manual answer:', err);
+        throw err;
+      }
+    },
+
+    async applyOfflineManualAnswer(answerTokenStr) {
+      try {
+        if (!this.manualOfferPC) {
+          throw new Error('No hay una oferta activa creada en este dispositivo.');
+        }
+
+        let answerData = null;
+        try {
+          answerData = typeof answerTokenStr === 'object' ? answerTokenStr : JSON.parse(answerTokenStr.trim());
+        } catch (e) {
+          throw new Error('Formato de respuesta inválido.');
+        }
+
+        if (!answerData || answerData.t !== 'SALVATE_ANSWER') {
+          throw new Error('El código no es una respuesta válida de vinculación.');
+        }
+
+        const rawSdp = decompressSDP(answerData.sdp);
+        await this.manualOfferPC.setRemoteDescription(new RTCSessionDescription({
+          type: 'answer',
+          sdp: rawSdp
+        }));
+
+        return {
+          success: true,
+          remotePeerId: answerData.uid,
+          remotePeerName: answerData.name
+        };
+      } catch (err) {
+        console.error('Error applying offline manual answer:', err);
+        throw err;
+      }
+    },
+
+    bindManualDataChannel(channel, pc, currentUser, remotePeerId = null, remotePeerName = null) {
+      const cleanPeerId = (remotePeerId || 'offline_peer_' + Math.random().toString(36).substr(2, 6)).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      const wrappedConn = {
+        peer: cleanPeerId,
+        open: channel.readyState === 'open',
+        isOfflineDirect: true,
+        send: (payload) => {
+          if (channel.readyState === 'open') {
+            try {
+              channel.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+            } catch (e) {}
+          }
+        },
+        close: () => {
+          try { channel.close(); } catch (e) {}
+          try { pc.close(); } catch (e) {}
+        }
+      };
+
+      const handleOpen = () => {
+        wrappedConn.open = true;
+        if (!this.peerConnections.some(c => c.peer === cleanPeerId)) {
+          this.peerConnections.push(wrappedConn);
+          this.activePeersCount = this.peerConnections.length;
+        }
+        this.isP2PActive = true;
+
+        if (currentUser) {
+          try {
+            wrappedConn.send({
+              type: 'STATUS_UPDATE',
+              payload: currentUser
+            });
+            wrappedConn.send({
+              type: 'REQUEST_STATUS'
+            });
+          } catch (e) {}
+        }
+
+        if (remotePeerName) {
+          this.registerOrUpdatePeerUser({
+            id: cleanPeerId,
+            name: remotePeerName,
+            status: 'A salvo',
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        this.pushNotification({
+          type: 'status',
+          status: 'A salvo',
+          title: 'Enlace Offline Establecido',
+          message: `Conexión directa P2P vinculada sin internet.`
+        });
+      };
+
+      channel.onopen = handleOpen;
+
+      channel.onmessage = (event) => {
+        try {
+          const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          this.handleIncomingGossip(data);
+        } catch (e) {}
+      };
+
+      channel.onclose = () => {
+        wrappedConn.open = false;
+        this.peerConnections = this.peerConnections.filter(c => c.peer !== cleanPeerId);
+        this.activePeersCount = this.peerConnections.length;
+      };
+
+      if (channel.readyState === 'open') {
+        handleOpen();
+      }
+    },
+
     async linkDeviceBidirectional(targetPeerId, currentUser) {
       if (!targetPeerId || !currentUser) return;
       const cleanTargetId = targetPeerId.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
       
-      // 1. Establish WebRTC connection
       this.connectToPeer(cleanTargetId, currentUser);
 
-      // 2. Derive placeholder name if not yet received
       const cleanPeerName = cleanTargetId.split('-')[1] ? cleanTargetId.split('-')[1].replace(/_/g, ' ') : 'Contacto Cercano';
       const peerPlaceholder = {
         id: cleanTargetId,
@@ -301,7 +577,6 @@ export const useMeshStore = defineStore('mesh', {
 
       await this.registerOrUpdatePeerUser(peerPlaceholder);
 
-      // 3. Broadcast bidirectional link handshake via Local channels & all open WebRTC conns
       const linkPayload = {
         type: 'LINK_PEER',
         targetId: cleanTargetId,
@@ -506,7 +781,6 @@ export const useMeshStore = defineStore('mesh', {
 
           await this.registerOrUpdatePeerUser(peer);
 
-          // Only record to history & notify if status genuinely changed or was an explicit user ping (NOT on silent reload syncs)
           if (hasStatusChanged || isExplicitPing) {
             const historyEntry = {
               id: `ping-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -530,7 +804,6 @@ export const useMeshStore = defineStore('mesh', {
               message: `Reporta: "${peer.status}"`
             });
 
-            // Forward emergency status update to other connected mesh nodes
             this.peerConnections.forEach(conn => {
               if (conn && conn.open && conn.peer !== peer.id) {
                 try {
