@@ -25,7 +25,7 @@
           autofocus
         >
           <template #icon>
-            <User class="w-4.5 h-4.5" />
+            <User class="w-4 h-4" />
           </template>
         </AppInput>
 
@@ -38,7 +38,7 @@
         >
           <span>Ingresar a Sálvate</span>
           <template #icon-right>
-            <ArrowRight class="w-4.5 h-4.5 ml-1" />
+            <ArrowRight class="w-4 h-4 ml-1" />
           </template>
         </AppButton>
       </form>

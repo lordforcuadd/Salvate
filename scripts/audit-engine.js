@@ -114,6 +114,18 @@ function auditFile(filePath) {
       auditResults.summary.uiUxIssues++;
     }
 
+    // Check for invalid non-standard decimal Tailwind classes (e.g. w-4.5, h-4.5, p-4.5)
+    const invalidDecimalMatches = content.match(/\b(w|h|p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|gap-x|gap-y)-[4-9]\.5\b/g);
+    if (invalidDecimalMatches && invalidDecimalMatches.length > 0) {
+      auditResults.issues.push({
+        file: relPath,
+        type: 'Invalid Tailwind Sizing Scale',
+        category: 'uiUxIssues',
+        message: `Se detectaron clases de espaciado inválidas de Tailwind (${[...new Set(invalidDecimalMatches)].join(', ')}). La escala salta de 3.5 a 4 a 5. Usa w-4 h-4 o valores arbitrarios w-[18px].`
+      });
+      auditResults.summary.uiUxIssues++;
+    }
+
     // Check for flex items with truncate but missing min-w-0 on parent
     lines.forEach((line, idx) => {
       if (line.includes('truncate') && line.includes('flex-1') && !line.includes('min-w-0')) {

@@ -27,7 +27,7 @@
             aria-label="Cerrar ventana"
             @click="close"
           >
-            <X class="w-4.5 h-4.5" />
+            <X class="w-4 h-4" />
           </button>
         </div>
 
