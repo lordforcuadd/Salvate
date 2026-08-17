@@ -3,120 +3,184 @@ import { getAllDBItems, saveDBItem, deleteDBItem, getDBItem } from '../services/
 
 export const useMedicalStore = defineStore('medical', {
   state: () => ({
-    familyMembers: [], // Starts 100% empty for clean user testing from scratch
-    checklists: {
-      backpack: {
-        'agua_embotellada': false,
-        'alimentos_no_perecibles': false,
-        'botiquin_primeros_auxilios': false,
-        'linterna_pilas': false,
-        'radio_portatil_am_fm': false,
-        'silbato_emergencia': false,
-        'manta_termica': false,
-        'copia_documentos_dni': false,
-        'dinero_en_efectivo_monedas': false,
-        'cargador_portatil_powerbank': false,
-        'mascarillas_kn95': false,
-        'alcohol_gel_desinfectante': false
-      },
-      pets: {
-        'comida_seca_mascota': false,
-        'agua_mascota_3_dias': false,
-        'correa_bozal_transportadora': false,
-        'placa_identificacion': false,
-        'copia_carnet_vacunas': false,
-        'plato_desplegable': false,
-        'manta_o_juguete_tranquilizante': false,
-        'botiquin_veterinario_basico': false
-      }
-    },
-    guides: [
+    familyMembers: [],
+    backpackItems: [
+      { id: 'agua', category: 'Hidratación & Nutrición', title: 'Agua embotellada (sin gas)', desc: '2 litros por persona al día (mínimo 3 días)', checked: false },
+      { id: 'alimentos', category: 'Hidratación & Nutrición', title: 'Alimentos no perecibles', desc: 'Enlatados con abrelatas, barras energéticas, frutos secos', checked: false },
+      { id: 'botiquin', category: 'Salud & Primeros Auxilios', title: 'Botiquín de primeros auxilios', desc: 'Gasas, vendas, alcohol, esparadrapo, analgésicos', checked: false },
+      { id: 'mascarillas', category: 'Salud & Primeros Auxilios', title: 'Mascarillas KN95 / Quirúrgicas', desc: 'Protección contra polvo, cenizas y escombros', checked: false },
+      { id: 'alcohol_gel', category: 'Salud & Primeros Auxilios', title: 'Alcohol en gel y toallitas', desc: 'Higiene y desinfección sin agua corriente', checked: false },
+      { id: 'linterna', category: 'Herramientas & Comunicación', title: 'Linterna con pilas de repuesto', desc: 'LED de alta duración o linterna dinamo', checked: false },
+      { id: 'radio', category: 'Herramientas & Comunicación', title: 'Radio portátil AM/FM', desc: 'Para sintonizar boletines de defensa civil y COE', checked: false },
+      { id: 'silbato', category: 'Herramientas & Comunicación', title: 'Silbato de emergencia', desc: 'Para señalización acústica a rescatistas', checked: false },
+      { id: 'powerbank', category: 'Herramientas & Comunicación', title: 'Batería externa (Powerbank)', desc: 'Cargada al 100% con cable para tu celular', checked: false },
+      { id: 'navaja', category: 'Herramientas & Comunicación', title: 'Navaja multiusos / Cuchilla', desc: 'Herramienta para cortes y reparaciones rápidas', checked: false },
+      { id: 'manta', category: 'Abrigo & Documentos', title: 'Manta térmica de aluminio', desc: 'Compacta, evita la hipotermia nocturna', checked: false },
+      { id: 'documentos', category: 'Abrigo & Documentos', title: 'Copia de DNI y carnet de salud', desc: 'En bolsa hermética impermeable (Ziploc)', checked: false },
+      { id: 'efectivo', category: 'Abrigo & Documentos', title: 'Dinero en efectivo (monedas y billetes pequeños)', desc: 'Los POS y cajeros no funcionarán sin energía', checked: false },
+      { id: 'llaves', category: 'Abrigo & Documentos', title: 'Duplicado de llaves', desc: 'Vivienda y candados de paso', checked: false }
+    ],
+    petItems: [
+      { id: 'comida_pet', category: 'Mascotas', title: 'Alimento seco / húmedo racionado', desc: 'Porción para mínimo 3 a 5 días en bolsa hermética', checked: false },
+      { id: 'agua_pet', category: 'Mascotas', title: 'Agua para tu mascota', desc: '1 litro al día por cada 10kg de peso', checked: false },
+      { id: 'correa_pet', category: 'Mascotas', title: 'Correa, collar y arnés resistente', desc: 'Listo y accesible junto a la mochila', checked: false },
+      { id: 'placa_pet', category: 'Mascotas', title: 'Placa de identificación con teléfono', desc: 'Puesta en el collar con número legible', checked: false },
+      { id: 'carnet_pet', category: 'Mascotas', title: 'Copia de carnet de vacunación', desc: 'En bolsa impermeable con foto actual', checked: false },
+      { id: 'platos_pet', category: 'Mascotas', title: 'Platos plegables de silicona', desc: 'Para agua y alimento', checked: false },
+      { id: 'manta_pet', category: 'Mascotas', title: 'Manta / prenda con olor familiar', desc: 'Ayuda a reducir el estrés post-traumático', checked: false },
+      { id: 'canil_pet', category: 'Mascotas', title: 'Transportín o canil plegable', desc: 'Para evacuación segura de gatos y animales pequeños', checked: false }
+    ],
+    firstAidGuides: [
       {
         id: 'rcp',
         title: 'Reanimación Cardiopulmonar (RCP)',
-        subtitle: 'Para adultos y adolescentes inconscientes sin respiración',
+        badge: 'Soporte Vital',
+        summary: 'Para personas inconscientes que no respiran con normalidad',
         steps: [
-          'Verifica la seguridad de la zona y comprueba si la persona responde dando palmadas en sus hombros.',
-          'Llama de inmediato al 116 (Bomberos) o 106 (SAMU) o pide a alguien que lo haga.',
-          'Coloca el talón de una mano en el centro del pecho (esternón) y la otra mano encima entrelazando los dedos.',
-          'Comprime el pecho fuerte y rápido (100 a 120 compresiones por minuto) al ritmo constante.',
-          'Permite que el pecho vuelva a su posición original entre cada compresión. No pares hasta que llegue ayuda médica.'
+          'Verifica la seguridad del entorno y estimula a la víctima dando palmadas firmes en sus hombros preguntando: "¿Estás bien?".',
+          'Si no responde y no respira, llama o grita para que alguien llame de inmediato al 116 (Bomberos) o 106 (SAMU).',
+          'Ubica el centro del pecho (mitad inferior del esternón). Coloca el talón de una mano y la otra mano entrelazada encima.',
+          'Mantén los brazos rectos con los hombros directamente sobre tus manos y comprime fuerte y rápido a una profundidad de 5 a 6 cm.',
+          'Ritmo: 100 a 120 compresiones por minuto (al compás de "Stayin Alive"). Permite que el pecho se expanda totalmente entre compresiones.',
+          'No interrumpas las compresiones hasta que llegue la ambulancia o la víctima empiece a moverse.'
         ],
-        icon: 'HeartPulse',
-        badgeColor: 'bg-terracotta-500/10 text-terracotta-400 border-terracotta-500/20'
+        warnings: 'NUNCA realices RCP en una persona que esté consciente o respire con normalidad.'
       },
       {
         id: 'heimlich',
-        title: 'Maniobra de Heimlich (Asfixia)',
-        subtitle: 'Obstrucción total de la vía aérea en persona consciente',
+        title: 'Maniobra de Heimlich (Atragantamiento)',
+        badge: 'Vía Aérea',
+        summary: 'Desobstrucción de vía aérea por cuerpo extraño en persona consciente',
         steps: [
-          'Pregunta: "¿Te estás ahogando?". Si la persona no puede hablar ni toser y se lleva las manos al cuello, actúa de inmediato.',
-          'Colócate de pie detrás de la persona y rodea su cintura con tus brazos.',
-          'Haz un puño con una mano y colócalo justo por encima del ombligo y por debajo del esternón.',
-          'Sujeta tu puño con la otra mano y realiza presiones rápidas hacia adentro y hacia arriba.',
-          'Repite las presiones fuertemente hasta que el objeto sea expulsado o la persona quede inconsciente.'
+          'Reconoce el signo universal de asfixia: manos al cuello, incapacidad para hablar, toser o respirar.',
+          'Párate detrás de la persona y rodea su cintura con tus brazos inclinándola ligeramente hacia adelante.',
+          'Cierra una mano formando un puño y colócalo dos dedos por encima del ombligo (justo debajo del esternón).',
+          'Cubre tu puño con la otra mano y presiona con fuerza hacia adentro y hacia arriba en un movimiento rápido.',
+          'Repite las compresiones abdominales continuas hasta que el objeto sea expulsado o la persona quede inconsciente.',
+          'Si la persona pierde el conocimiento, colócala en el piso boca arriba e inicia compresiones de RCP.'
         ],
-        icon: 'Wind',
-        badgeColor: 'bg-teal-500/10 text-teal-400 border-teal-500/20'
-      },
-      {
-        id: 'burns',
-        title: 'Tratamiento de Quemaduras',
-        subtitle: 'Primeros auxilios térmicos y químicos inmediatos',
-        steps: [
-          'Enfría la quemadura de inmediato con agua fría de caño durante 10 a 20 minutos. NUNCA uses hielo directo.',
-          'Retira suavemente ropa u objetos cerca de la zona antes de que se inflame, sin despegar ropa adherida a la piel.',
-          'Cubre la quemadura sueltamente con una gasa estéril o paño limpio y seco.',
-          'NUNCA revientes ampollas ni apliques crema, pasta dental, aceite o mantequilla.',
-          'Acude inmediatamente a un centro de salud si la quemadura es extensa o afecta cara, manos o articulaciones.'
-        ],
-        icon: 'Flame',
-        badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+        warnings: 'En bebés menores de 1 año: alterna 5 palmadas en la espalda entre los omóplatos con 5 compresiones torácicas.'
       },
       {
         id: 'hemorrhage',
-        title: 'Control de Hemorragias',
-        subtitle: 'Detención rápida de sangrado abundante',
+        title: 'Control de Hemorragias Severas',
+        badge: 'Hemorragia',
+        summary: 'Detención de sangrado activo masivo para prevenir shock hipovolémico',
         steps: [
-          'Colócate guantes o usa una bolsa plástica si está disponible para evitar contacto directo con sangre.',
-          'Aplica PRESIÓN DIRECTA sobre la herida sangrante usando una gasa, compresa o tela limpia.',
-          'Mantén la presión firme e ininterrumpida por al menos 10 minutos seguidos sin levantar la gasa.',
-          'Si la sangre atraviesa la gasa, agrega más capas por encima sin retirar las anteriores.',
-          'Eleva la extremidad afectada por encima del nivel del corazón si no hay sospecha de fractura y traslada de urgencia.'
+          'Usa guantes o una bolsa plástica limpia para protegerte de fluidos biológicos.',
+          'Aplica PRESIÓN DIRECTA y firme sobre la herida con un apósito, gasa o tela limpia utilizando el talón de tu mano.',
+          'Mantén la presión continua por mínimo 10 a 15 minutos sin retirar la gasa para mirar si dejó de sangrar.',
+          'Si el apósito se empapa de sangre, NO lo retires; coloca más apósitos encima y aumenta la fuerza de compresión.',
+          'Realiza un vendaje compresivo firme fijando los apósitos.',
+          'En hemorragias extremas de brazos o piernas que no ceden: coloca un torniquete 5 a 7 cm por encima de la herida (nunca sobre una articulación), aprieta hasta que cese el sangrado y anota la hora exacta.'
         ],
-        icon: 'Droplet',
-        badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+        warnings: 'NUNCA aflojes un torniquete una vez colocado. Solo personal médico en quirófano debe retirarlo.'
+      },
+      {
+        id: 'burns',
+        title: 'Tratamiento Inicial de Quemaduras',
+        badge: 'Trauma Térmico',
+        summary: 'Manejo de lesiones por fuego, calor, vapor o fricción',
+        steps: [
+          'Enfría la zona quemada inmediatamente con AGUA CORRIENTE templada/fría durante 15 a 20 minutos ininterrumpidos.',
+          'Retira suavemente anillos, pulseras o ropa antes de que la zona se inflame, excepto si la ropa está adherida a la piel.',
+          'Cubre la quemadura de forma holgada con film plástico limpio o gasa estéril humedecida.',
+          'Mantén a la víctima abrigada para evitar la hipotermia tras el enfriamiento local.'
+        ],
+        warnings: 'NUNCA apliques hielo directo, pasta dental, mantequilla, aceites ni revientes ampollas.'
+      },
+      {
+        id: 'fractures',
+        title: 'Inmovilización de Fracturas y Esguinces',
+        badge: 'Traumatología',
+        summary: 'Estabilización de extremidades lesionadas por derrumbes o caídas',
+        steps: [
+          'No muevas a la persona a menos que exista un peligro inminente de derrumbe o incendio.',
+          'Identifica deformidad evidente, dolor intenso, hinchazón o imposibilidad de mover la articulación.',
+          'Inmoviliza la extremidad en la posición en que la encontraste, abarcando la articulación por encima y por debajo de la lesión.',
+          'Usa tablillas improvisadas (maderas, cartón doblado, revistas gruesas) acolchadas con tela.',
+          'Fija la férula con vendas o tiras de tela sin apretar excesivamente para no cortar la circulación sanguínea.',
+          'Verifica que los dedos mantengan calor, sensibilidad y color rosado.'
+        ],
+        warnings: 'NUNCA intentes recolocar o enderezar un hueso fracturado deformado.'
+      },
+      {
+        id: 'shock',
+        title: 'Prevención y Manejo de Shock',
+        badge: 'Estabilización',
+        summary: 'Manejo del colapso circulatorio post-trauma o estrés severo',
+        steps: [
+          'Recuesta a la persona boca arriba en un lugar seguro y despejado.',
+          'Eleva sus piernas unos 30 cm por encima del nivel del corazón (si no se sospecha lesión en columna o fractura en piernas).',
+          'Aflójale la ropa ajustada (cuello, cinturón) para facilitar la respiración y ventilación.',
+          'Abrígala con una manta térmica o casaca para conservar el calor corporal.',
+          'Acompáñala hablándole con calma y transmitiéndole seguridad constante hasta que arribe el auxilio médico.'
+        ],
+        warnings: 'NO le des de comer ni beber líquidos a una persona en estado de shock.'
       }
     ]
   }),
 
   getters: {
     backpackProgress: (state) => {
-      const items = Object.values(state.checklists.backpack);
-      if (items.length === 0) return 0;
-      const checked = items.filter(Boolean).length;
-      return Math.round((checked / items.length) * 100);
+      if (!state.backpackItems.length) return 0;
+      const checked = state.backpackItems.filter(i => i.checked).length;
+      return Math.round((checked / state.backpackItems.length) * 100);
     },
     petsProgress: (state) => {
-      const items = Object.values(state.checklists.pets);
-      if (items.length === 0) return 0;
-      const checked = items.filter(Boolean).length;
-      return Math.round((checked / items.length) * 100);
+      if (!state.petItems.length) return 0;
+      const checked = state.petItems.filter(i => i.checked).length;
+      return Math.round((checked / state.petItems.length) * 100);
     }
   },
 
   actions: {
     async initMedicalVault() {
-      // Load family profiles strictly from IndexedDB
       const dbMembers = await getAllDBItems('medical_vault');
       this.familyMembers = dbMembers || [];
 
-      // Load Checklists
+      // Restore checklist states from IndexedDB
       const dbBackpack = await getDBItem('checklists', 'backpack');
-      if (dbBackpack) this.checklists.backpack = dbBackpack.data;
+      if (dbBackpack && dbBackpack.checkedIds) {
+        this.backpackItems.forEach(item => {
+          item.checked = dbBackpack.checkedIds.includes(item.id);
+        });
+      }
 
       const dbPets = await getDBItem('checklists', 'pets');
-      if (dbPets) this.checklists.pets = dbPets.data;
+      if (dbPets && dbPets.checkedIds) {
+        this.petItems.forEach(item => {
+          item.checked = dbPets.checkedIds.includes(item.id);
+        });
+      }
+    },
+
+    async toggleBackpackItem(id) {
+      const item = this.backpackItems.find(i => i.id === id);
+      if (item) {
+        item.checked = !item.checked;
+        const checkedIds = this.backpackItems.filter(i => i.checked).map(i => i.id);
+        await saveDBItem('checklists', { key: 'backpack', checkedIds });
+      }
+    },
+
+    async togglePetItem(id) {
+      const item = this.petItems.find(i => i.id === id);
+      if (item) {
+        item.checked = !item.checked;
+        const checkedIds = this.petItems.filter(i => i.checked).map(i => i.id);
+        await saveDBItem('checklists', { key: 'pets', checkedIds });
+      }
+    },
+
+    async resetChecklist(type) {
+      if (type === 'backpack') {
+        this.backpackItems.forEach(i => i.checked = false);
+        await saveDBItem('checklists', { key: 'backpack', checkedIds: [] });
+      } else if (type === 'pets') {
+        this.petItems.forEach(i => i.checked = false);
+        await saveDBItem('checklists', { key: 'pets', checkedIds: [] });
+      }
     },
 
     async saveMember(member) {
@@ -129,7 +193,7 @@ export const useMedicalStore = defineStore('medical', {
       if (idx >= 0) {
         this.familyMembers[idx] = member;
       } else {
-        this.familyMembers.push(member);
+        this.familyMembers.unshift(member);
       }
 
       await saveDBItem('medical_vault', member);
@@ -138,16 +202,6 @@ export const useMedicalStore = defineStore('medical', {
     async deleteMember(id) {
       this.familyMembers = this.familyMembers.filter(m => m.id !== id);
       await deleteDBItem('medical_vault', id);
-    },
-
-    async toggleChecklistItem(type, key) {
-      if (this.checklists[type] && key in this.checklists[type]) {
-        this.checklists[type][key] = !this.checklists[type][key];
-        await saveDBItem('checklists', {
-          key: type,
-          data: this.checklists[type]
-        });
-      }
     }
   }
 });
