@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Emerald Shield Gradient -->
+    <linearGradient id="emeraldShield" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <!-- Pulse Line Gradient -->
+    <linearGradient id="pulseGrad" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+
+    <!-- Inner Core Shield Dark Gradient -->
+    <linearGradient id="innerShieldBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#09281c" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#020d09" stop-opacity="0.95" />
+    </linearGradient>
+
+    <!-- Subtle Tactical Glow -->
+    <filter id="emeraldGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Outer Tactical Shield (Transparent Background) -->
+  <g filter="url(#emeraldGlow)">
+    <path
+      d="M256 48 
+         C352 48 424 76 448 120 
+         C448 268 384 396 256 468 
+         C128 396 64 268 64 120 
+         C88 76 160 48 256 48 Z"
+      fill="url(#innerShieldBg)"
+      stroke="url(#emeraldShield)"
+      stroke-width="20"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <!-- Inner Defense Bevel Line -->
+  <path
+    d="M256 86 
+       C330 86 388 108 406 142 
+       C406 254 354 356 256 418 
+       C158 356 106 254 106 142 
+       C124 108 182 86 256 86 Z"
+    fill="none"
+    stroke="#34d399"
+    stroke-width="6"
+    stroke-opacity="0.4"
+    stroke-linejoin="round"
+  />
+
+  <!-- Emergency Vital Lifeline / Seismic Pulse Wave -->
+  <path
+    d="M 96 256 
+       L 180 256 
+       L 215 190 
+       L 256 330 
+       L 295 155 
+       L 335 295 
+       L 358 256 
+       L 416 256"
+    fill="none"
+    stroke="url(#pulseGrad)"
+    stroke-width="24"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Emergency Core Beacon Dots -->
+  <circle cx="295" cy="155" r="13" fill="#ffffff" />
+  <circle cx="256" cy="330" r="10" fill="#34d399" />
+</svg>
