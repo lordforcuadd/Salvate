@@ -159,6 +159,17 @@
         </div>
       </div>
 
+      <!-- Tactical Medical Safety Disclaimer -->
+      <div class="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-xs text-amber-200">
+        <Info class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <div class="space-y-0.5 min-w-0 flex-1">
+          <span class="font-bold text-amber-300 block text-[11px] uppercase tracking-wider">Aviso Médico de Emergencia</span>
+          <p class="text-[11px] text-amber-200/90 leading-relaxed">
+            Estas guías son una referencia táctica de auxilio inicial para situaciones de desastre y <strong>no reemplazan la atención médica profesional</strong> ni el diagnóstico calificado. Contacta siempre a los servicios de rescate (116 / 106) en cuanto sea posible.
+          </p>
+        </div>
+      </div>
+
       <!-- Segmented Accordion Guide Cards -->
       <div class="space-y-2.5">
         <div 
@@ -489,6 +500,7 @@ import {
   ShieldAlert,
   Activity,
   AlertTriangle,
+  Info,
   ChevronDown, 
   ChevronUp 
 } from 'lucide-vue-next';
