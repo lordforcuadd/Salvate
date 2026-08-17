@@ -3,20 +3,70 @@ import { Peer } from 'peerjs';
 import { saveDBItem, getAllDBItems, deleteDBItem } from '../services/db';
 import { useAuthStore } from './authStore';
 
-function compressSDP(sdp) {
-  try {
-    return btoa(unescape(encodeURIComponent(sdp)));
-  } catch (e) {
-    return btoa(sdp);
+// Ultra-compact SDP Minifier (reduces 1500+ byte WebRTC SDP down to ~150 bytes for ultra-fast QR scanning)
+function minifySDP(sdp, uid, name, type) {
+  const ufragMatch = sdp.match(/a=ice-ufrag:([^\r\n]+)/);
+  const pwdMatch = sdp.match(/a=ice-pwd:([^\r\n]+)/);
+  const fpMatch = sdp.match(/a=fingerprint:sha-256 ([^\r\n]+)/);
+  const setupMatch = sdp.match(/a=setup:([^\r\n]+)/);
+
+  const candidates = [];
+  const candidateRegex = /a=candidate:(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+typ\s+(\S+)/g;
+  let match;
+  while ((match = candidateRegex.exec(sdp)) !== null) {
+    candidates.push([match[5], parseInt(match[6], 10), match[1], parseInt(match[4], 10), match[7]]);
   }
+
+  return {
+    t: type === 'offer' ? 'O' : 'A',
+    uid,
+    n: name,
+    uf: ufragMatch ? ufragMatch[1] : '',
+    pw: pwdMatch ? pwdMatch[1] : '',
+    fp: fpMatch ? fpMatch[1].replace(/:/g, '') : '',
+    st: setupMatch ? setupMatch[1] : (type === 'offer' ? 'actpass' : 'active'),
+    cd: candidates
+  };
 }
 
-function decompressSDP(b64) {
-  try {
-    return decodeURIComponent(escape(atob(b64)));
-  } catch (e) {
-    return atob(b64);
+function expandSDP(min) {
+  if (min.sdp) {
+    // Already in raw or expanded format
+    return {
+      type: min.t === 'O' || min.t === 'SALVATE_OFFER' ? 'offer' : 'answer',
+      sdp: min.sdp,
+      uid: min.uid,
+      name: min.name || min.n
+    };
   }
+
+  const type = min.t === 'O' ? 'offer' : 'answer';
+  const setup = min.st || (type === 'offer' ? 'actpass' : 'active');
+  const fpFormatted = (min.fp || '').match(/.{2}/g)?.join(':') || '';
+  
+  let sdp = [
+    'v=0',
+    `o=- ${Date.now()} 2 IN IP4 127.0.0.1`,
+    's=-',
+    't=0 0',
+    'a=group:BUNDLE 0',
+    'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+    'c=IN IP4 0.0.0.0',
+    'a=mid:0',
+    `a=setup:${setup}`,
+    'a=sctp-port:5000',
+    `a=ice-ufrag:${min.uf}`,
+    `a=ice-pwd:${min.pw}`,
+    `a=fingerprint:sha-256 ${fpFormatted}`
+  ].join('\r\n') + '\r\n';
+
+  if (min.cd && Array.isArray(min.cd)) {
+    min.cd.forEach((c, idx) => {
+      sdp += `a=candidate:${c[2] || (idx + 1)} 1 UDP ${c[3] || 2122260223} ${c[0]} ${c[1]} typ ${c[4] || 'host'}\r\n`;
+    });
+  }
+
+  return { type, sdp, uid: min.uid, name: min.n };
 }
 
 export const useMeshStore = defineStore('mesh', {
@@ -98,8 +148,6 @@ export const useMeshStore = defineStore('mesh', {
           this.broadcastChannel.postMessage(payload);
         } catch (e) {}
       }
-      // Note: We append _ts with Date.now() + Math.random() to guarantee that localStorage value changes on every call,
-      // which is required by web browsers to reliably trigger the cross-tab 'storage' event across browser windows.
       try {
         localStorage.setItem('salvate_live_gossip', JSON.stringify({ ...payload, _ts: Date.now() + Math.random() }));
       } catch (e) {}
@@ -159,7 +207,6 @@ export const useMeshStore = defineStore('mesh', {
 
     async cleanupGhostUsers(currentUserId) {
       const now = Date.now();
-      // Only delete contacts that are genuinely inactive (>3 minutes without updates)
       const ghostIds = this.users
         .filter(u => u.id !== currentUserId && (now - new Date(u.updatedAt || 0).getTime() > 180000))
         .map(u => u.id);
@@ -230,7 +277,6 @@ export const useMeshStore = defineStore('mesh', {
             this.reconnectTimeout = setTimeout(() => {
               try {
                 if (this.peerInstance && this.peerInstance.disconnected) {
-                  // Reconnect allowed online OR if local community host is configured
                   if (navigator.onLine || this.signalingServer?.isCustom) {
                     this.peerInstance.reconnect();
                   }
@@ -371,15 +417,8 @@ export const useMeshStore = defineStore('mesh', {
           }
         });
 
-        const offerPayload = {
-          t: 'SALVATE_OFFER',
-          v: 1,
-          uid: currentUser.id,
-          name: currentUser.name,
-          sdp: compressSDP(pc.localDescription.sdp)
-        };
-
-        return JSON.stringify(offerPayload);
+        const minifiedOffer = minifySDP(pc.localDescription.sdp, currentUser.id, currentUser.name, 'offer');
+        return JSON.stringify(minifiedOffer);
       } catch (err) {
         console.error('Error creating offline manual offer:', err);
         throw err;
@@ -393,28 +432,24 @@ export const useMeshStore = defineStore('mesh', {
           this.manualAnswerPC = null;
         }
 
-        let offerData = null;
+        let offerObj = null;
         try {
-          offerData = typeof offerTokenStr === 'object' ? offerTokenStr : JSON.parse(offerTokenStr.trim());
+          offerObj = typeof offerTokenStr === 'object' ? offerTokenStr : JSON.parse(offerTokenStr.trim());
         } catch (e) {
           throw new Error('Formato de código inválido.');
         }
 
-        if (!offerData || offerData.t !== 'SALVATE_OFFER') {
-          throw new Error('El código no corresponde a una oferta de vinculación Sálvate válida.');
-        }
-
-        const rawSdp = decompressSDP(offerData.sdp);
+        const offerInfo = expandSDP(offerObj);
         const pc = new RTCPeerConnection({ iceServers: [] });
         this.manualAnswerPC = pc;
 
         pc.ondatachannel = (e) => {
-          this.bindManualDataChannel(e.channel, pc, currentUser, offerData.uid, offerData.name);
+          this.bindManualDataChannel(e.channel, pc, currentUser, offerInfo.uid, offerInfo.name);
         };
 
         await pc.setRemoteDescription(new RTCSessionDescription({
           type: 'offer',
-          sdp: rawSdp
+          sdp: offerInfo.sdp
         }));
 
         const answer = await pc.createAnswer();
@@ -435,15 +470,8 @@ export const useMeshStore = defineStore('mesh', {
           }
         });
 
-        const answerPayload = {
-          t: 'SALVATE_ANSWER',
-          v: 1,
-          uid: currentUser.id,
-          name: currentUser.name,
-          sdp: compressSDP(pc.localDescription.sdp)
-        };
-
-        return JSON.stringify(answerPayload);
+        const minifiedAnswer = minifySDP(pc.localDescription.sdp, currentUser.id, currentUser.name, 'answer');
+        return JSON.stringify(minifiedAnswer);
       } catch (err) {
         console.error('Error creating offline manual answer:', err);
         throw err;
@@ -456,27 +484,23 @@ export const useMeshStore = defineStore('mesh', {
           throw new Error('No hay una oferta activa creada en este dispositivo.');
         }
 
-        let answerData = null;
+        let answerObj = null;
         try {
-          answerData = typeof answerTokenStr === 'object' ? answerTokenStr : JSON.parse(answerTokenStr.trim());
+          answerObj = typeof answerTokenStr === 'object' ? answerTokenStr : JSON.parse(answerTokenStr.trim());
         } catch (e) {
           throw new Error('Formato de respuesta inválido.');
         }
 
-        if (!answerData || answerData.t !== 'SALVATE_ANSWER') {
-          throw new Error('El código no es una respuesta válida de vinculación.');
-        }
-
-        const rawSdp = decompressSDP(answerData.sdp);
+        const answerInfo = expandSDP(answerObj);
         await this.manualOfferPC.setRemoteDescription(new RTCSessionDescription({
           type: 'answer',
-          sdp: rawSdp
+          sdp: answerInfo.sdp
         }));
 
         return {
           success: true,
-          remotePeerId: answerData.uid,
-          remotePeerName: answerData.name
+          remotePeerId: answerInfo.uid,
+          remotePeerName: answerInfo.name
         };
       } catch (err) {
         console.error('Error applying offline manual answer:', err);

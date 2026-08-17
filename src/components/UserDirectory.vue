@@ -176,31 +176,31 @@
             <div class="space-y-1 min-w-0">
               <p class="font-black text-emerald-300">Emparejamiento 100% Sin Internet ni Servidores</p>
               <p class="text-[11px] opacity-90 leading-relaxed">
-                Intercambia los códigos QR entre ambos celulares conectados al mismo WiFi o punto de acceso (hotspot). WebRTC enlazará los dispositivos directamente.
+                Escanea los códigos QR entre ambos celulares conectados al mismo WiFi o hotspot. El canal WebRTC se enlazará al instante de forma directa.
               </p>
             </div>
           </div>
 
           <!-- Step Selector -->
-          <div class="flex items-center justify-between gap-2 p-1 bg-zinc-950 rounded-xl border border-zinc-800 text-[11px] font-bold">
+          <div class="flex items-center justify-between gap-1.5 p-1 bg-zinc-950 rounded-xl border border-zinc-800 text-[11px] font-bold">
             <button
               type="button"
-              :class="['flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer', qrStep === 'offer' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
+              :class="['min-w-0 flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer truncate', qrStep === 'offer' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
               @click="prepareOfferStep"
             >
               1. Celular A (Generar)
             </button>
             <button
               type="button"
-              :class="['flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer', qrStep === 'answer' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
-              @click="qrStep = 'answer'"
+              :class="['min-w-0 flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer truncate', qrStep === 'answer' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
+              @click="openAnswerStep"
             >
               2. Celular B (Responder)
             </button>
             <button
               type="button"
-              :class="['flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer', qrStep === 'confirm' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
-              @click="qrStep = 'confirm'"
+              :class="['min-w-0 flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer truncate', qrStep === 'confirm' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400']"
+              @click="openConfirmStep"
             >
               3. Celular A (Completar)
             </button>
@@ -210,11 +210,11 @@
           <div v-if="qrStep === 'offer'" class="space-y-3 p-3.5 bg-zinc-950 rounded-2xl border border-zinc-800">
             <div class="text-center space-y-1">
               <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 1: Muestra este código QR al Celular B</h4>
-              <p class="text-[11px] text-zinc-400">Pide al otro celular que seleccione la pestaña "2. Celular B (Responder)".</p>
+              <p class="text-[11px] text-zinc-400">Pide al otro celular que seleccione la pestaña "2. Celular B (Responder)" y apunte su cámara.</p>
             </div>
 
-            <!-- QR SVG Canvas -->
-            <div v-if="generatedOfferToken" class="flex flex-col items-center justify-center p-2 bg-white rounded-2xl max-w-[220px] mx-auto shadow-xl">
+            <!-- Standard ISO/IEC 18004 QR SVG Canvas -->
+            <div v-if="generatedOfferToken" class="flex flex-col items-center justify-center p-3 bg-white rounded-2xl max-w-[240px] mx-auto shadow-xl">
               <div v-html="offerQrSvg" class="w-full h-auto"></div>
             </div>
 
@@ -240,31 +240,59 @@
           <!-- STEP 2: CELULAR B ENTERS/SCANS OFFER AND REPLIES -->
           <div v-if="qrStep === 'answer'" class="space-y-3 p-3.5 bg-zinc-950 rounded-2xl border border-zinc-800">
             <div class="space-y-1">
-              <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 2: Pega el código del Celular A</h4>
-              <p class="text-[11px] text-zinc-400">Pega aquí el código que te compartió el Celular A para generar tu respuesta.</p>
+              <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 2: Escanea el QR del Celular A</h4>
+              <p class="text-[11px] text-zinc-400">Apunta tu cámara al código QR que muestra el Celular A para generar tu respuesta.</p>
             </div>
 
-            <textarea
-              v-model="inputOfferToken"
-              rows="3"
-              class="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-[11px] focus:border-emerald-500 focus:outline-none resize-none"
-              placeholder='Pega aquí el código SALVATE_OFFER...'
-            ></textarea>
+            <!-- In-App Camera Scanner View -->
+            <div v-if="showScannerForAnswer" class="space-y-2">
+              <QrCameraScanner
+                @scanned="handleScannedOffer"
+                @close="showScannerForAnswer = false"
+              />
+            </div>
 
-            <button
-              type="button"
-              :disabled="!inputOfferToken.trim() || isProcessingAnswer"
-              class="w-full h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
-              @click="generateAnswerFromOffer"
-            >
-              <CheckCircle2 class="w-4 h-4" />
-              <span>Generar Código de Respuesta QR</span>
-            </button>
+            <!-- Camera Trigger Button -->
+            <div v-else class="space-y-2.5">
+              <button
+                type="button"
+                class="w-full h-11 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs sm:text-sm transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                @click="showScannerForAnswer = true"
+              >
+                <Camera class="w-4 h-4" />
+                <span>Abrir Escáner de Cámara</span>
+              </button>
+
+              <div class="relative flex py-1 items-center">
+                <div class="flex-grow border-t border-zinc-800"></div>
+                <span class="flex-shrink mx-3 text-[10px] text-zinc-500 uppercase font-bold tracking-wider">o pega el texto</span>
+                <div class="flex-grow border-t border-zinc-800"></div>
+              </div>
+
+              <textarea
+                v-model="inputOfferToken"
+                rows="3"
+                class="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-[11px] focus:border-emerald-500 focus:outline-none resize-none"
+                placeholder='Pega aquí el código del Celular A...'
+              ></textarea>
+
+              <button
+                type="button"
+                :disabled="!inputOfferToken.trim() || isProcessingAnswer"
+                class="w-full h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 font-bold text-xs transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+                @click="generateAnswerFromOffer"
+              >
+                <CheckCircle2 class="w-4 h-4 text-emerald-400" />
+                <span>Procesar y Generar Respuesta QR</span>
+              </button>
+            </div>
 
             <!-- Display Generated Answer QR -->
-            <div v-if="generatedAnswerToken" class="pt-2 border-t border-zinc-800 space-y-2 text-center">
-              <p class="text-[11px] font-bold text-emerald-400">¡Respuesta Lista! Muéstrasela al Celular A:</p>
-              <div class="flex flex-col items-center justify-center p-2 bg-white rounded-2xl max-w-[200px] mx-auto shadow-xl">
+            <div v-if="generatedAnswerToken" class="pt-3 border-t border-zinc-800 space-y-2.5 text-center">
+              <div class="p-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 font-bold text-xs">
+                ¡Respuesta Lista! Muéstrale este QR al Celular A:
+              </div>
+              <div class="flex flex-col items-center justify-center p-3 bg-white rounded-2xl max-w-[220px] mx-auto shadow-xl">
                 <div v-html="answerQrSvg" class="w-full h-auto"></div>
               </div>
               <button
@@ -280,26 +308,52 @@
           <!-- STEP 3: CELULAR A APPLIES ANSWER -->
           <div v-if="qrStep === 'confirm'" class="space-y-3 p-3.5 bg-zinc-950 rounded-2xl border border-zinc-800">
             <div class="space-y-1">
-              <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 3: Completa el Enlace en el Celular A</h4>
-              <p class="text-[11px] text-zinc-400">Pega aquí el código de respuesta del Celular B para abrir el canal de datos.</p>
+              <h4 class="font-black text-zinc-100 text-xs sm:text-sm">Paso 3: Escanea la Respuesta del Celular B</h4>
+              <p class="text-[11px] text-zinc-400">Apunta tu cámara al código QR de respuesta que muestra el Celular B para completar el enlace.</p>
             </div>
 
-            <textarea
-              v-model="inputAnswerToken"
-              rows="3"
-              class="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-[11px] focus:border-emerald-500 focus:outline-none resize-none"
-              placeholder='Pega aquí el código SALVATE_ANSWER...'
-            ></textarea>
+            <!-- In-App Camera Scanner View -->
+            <div v-if="showScannerForConfirm" class="space-y-2">
+              <QrCameraScanner
+                @scanned="handleScannedAnswer"
+                @close="showScannerForConfirm = false"
+              />
+            </div>
 
-            <button
-              type="button"
-              :disabled="!inputAnswerToken.trim() || isFinalizing"
-              class="w-full h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
-              @click="finalizeOfflinePairing"
-            >
-              <Zap class="w-4 h-4" />
-              <span>Completar y Activar Enlace P2P</span>
-            </button>
+            <!-- Camera Trigger Button & Textarea -->
+            <div v-else class="space-y-2.5">
+              <button
+                type="button"
+                class="w-full h-11 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs sm:text-sm transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                @click="showScannerForConfirm = true"
+              >
+                <Camera class="w-4 h-4" />
+                <span>Escanear QR del Celular B con Cámara</span>
+              </button>
+
+              <div class="relative flex py-1 items-center">
+                <div class="flex-grow border-t border-zinc-800"></div>
+                <span class="flex-shrink mx-3 text-[10px] text-zinc-500 uppercase font-bold tracking-wider">o pega el texto</span>
+                <div class="flex-grow border-t border-zinc-800"></div>
+              </div>
+
+              <textarea
+                v-model="inputAnswerToken"
+                rows="3"
+                class="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-[11px] focus:border-emerald-500 focus:outline-none resize-none"
+                placeholder='Pega aquí el código de respuesta del Celular B...'
+              ></textarea>
+
+              <button
+                type="button"
+                :disabled="!inputAnswerToken.trim() || isFinalizing"
+                class="w-full h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+                @click="finalizeOfflinePairing"
+              >
+                <Zap class="w-4 h-4" />
+                <span>Completar y Activar Enlace P2P</span>
+              </button>
+            </div>
           </div>
 
         </div>
@@ -425,17 +479,18 @@ import { useDialogStore } from '../stores/dialogStore';
 import AppBadge from './ui/AppBadge.vue';
 import AppModal from './ui/AppModal.vue';
 import AppInput from './ui/AppInput.vue';
+import QrCameraScanner from './ui/QrCameraScanner.vue';
 import { generateQRCodeSVG } from '../utils/qrcode';
 import { 
   Users, 
   Clock, 
   Radio, 
-  Link, 
   RefreshCw, 
   QrCode, 
   WifiOff, 
   CheckCircle2, 
-  Zap 
+  Zap,
+  Camera
 } from 'lucide-vue-next';
 
 const meshStore = useMeshStore();
@@ -456,6 +511,9 @@ const isFinalizing = ref(false);
 const copiedOffer = ref(false);
 const copiedAnswer = ref(false);
 
+const showScannerForAnswer = ref(false);
+const showScannerForConfirm = ref(false);
+
 // Direct ID State
 const targetInputId = ref('');
 const copiedId = ref(false);
@@ -471,12 +529,12 @@ const localServerForm = ref({
 
 const offerQrSvg = computed(() => {
   if (!generatedOfferToken.value) return '';
-  return generateQRCodeSVG(generatedOfferToken.value, 200);
+  return generateQRCodeSVG(generatedOfferToken.value, 220);
 });
 
 const answerQrSvg = computed(() => {
   if (!generatedAnswerToken.value) return '';
-  return generateQRCodeSVG(generatedAnswerToken.value, 180);
+  return generateQRCodeSVG(generatedAnswerToken.value, 200);
 });
 
 onMounted(() => {
@@ -490,8 +548,20 @@ const openConnectModal = () => {
   }
 };
 
+const openAnswerStep = () => {
+  qrStep.value = 'answer';
+  showScannerForAnswer.value = true;
+};
+
+const openConfirmStep = () => {
+  qrStep.value = 'confirm';
+  showScannerForConfirm.value = true;
+};
+
 const prepareOfferStep = async () => {
   qrStep.value = 'offer';
+  showScannerForAnswer.value = false;
+  showScannerForConfirm.value = false;
   try {
     if (authStore.user) {
       generatedOfferToken.value = await meshStore.createOfflineManualOffer(authStore.user);
@@ -510,6 +580,12 @@ const copyOfferToken = async () => {
   } catch (e) {}
 };
 
+const handleScannedOffer = async (scannedCode) => {
+  showScannerForAnswer.value = false;
+  inputOfferToken.value = scannedCode;
+  await generateAnswerFromOffer();
+};
+
 const generateAnswerFromOffer = async () => {
   if (!inputOfferToken.value.trim() || !authStore.user) return;
   isProcessingAnswer.value = true;
@@ -523,7 +599,7 @@ const generateAnswerFromOffer = async () => {
   } catch (err) {
     dialogStore.alert({
       title: 'Código Inválido',
-      message: err.message || 'No se pudo procesar la oferta. Asegúrate de copiar el código completo.',
+      message: err.message || 'No se pudo procesar la oferta. Asegúrate de enfocar bien el código QR.',
       variant: 'warning'
     });
   } finally {
@@ -540,6 +616,12 @@ const copyAnswerToken = async () => {
   } catch (e) {}
 };
 
+const handleScannedAnswer = async (scannedCode) => {
+  showScannerForConfirm.value = false;
+  inputAnswerToken.value = scannedCode;
+  await finalizeOfflinePairing();
+};
+
 const finalizeOfflinePairing = async () => {
   if (!inputAnswerToken.value.trim()) return;
   isFinalizing.value = true;
@@ -552,6 +634,7 @@ const finalizeOfflinePairing = async () => {
     });
     showConnectModal.value = false;
     inputAnswerToken.value = '';
+    showScannerForConfirm.value = false;
   } catch (err) {
     dialogStore.alert({
       title: 'Error de Vinculación',
