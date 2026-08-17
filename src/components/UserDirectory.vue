@@ -472,7 +472,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useMeshStore } from '../stores/meshStore';
 import { useAuthStore } from '../stores/authStore';
 import { useDialogStore } from '../stores/dialogStore';
@@ -539,6 +539,18 @@ const answerQrSvg = computed(() => {
 
 onMounted(() => {
   meshStore.reloadFromDB();
+});
+
+watch(showConnectModal, (isOpen) => {
+  if (!isOpen) {
+    meshStore.cancelPendingManualPairings();
+    showScannerForAnswer.value = false;
+    showScannerForConfirm.value = false;
+  }
+});
+
+onBeforeUnmount(() => {
+  meshStore.cancelPendingManualPairings();
 });
 
 const openConnectModal = () => {

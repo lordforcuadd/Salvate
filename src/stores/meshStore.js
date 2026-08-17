@@ -31,7 +31,6 @@ function minifySDP(sdp, uid, name, type) {
 
 function expandSDP(min) {
   if (min.sdp) {
-    // Already in raw or expanded format
     return {
       type: min.t === 'O' || min.t === 'SALVATE_OFFER' ? 'offer' : 'answer',
       sdp: min.sdp,
@@ -88,10 +87,8 @@ export const useMeshStore = defineStore('mesh', {
       (typeof localStorage !== 'undefined' && localStorage.getItem('salvate_signaling_server')) ||
       '{"isCustom":false,"host":"0.peerjs.com","port":443,"path":"/","secure":true}'
     ),
-    // Manual QR WebRTC pairing handles
-    manualOfferPC: null,
-    manualAnswerPC: null,
-    manualDataChannel: null
+    // Transient pending negotiation handle (isolated from established mesh peerConnections)
+    pendingNegotiationPC: null
   }),
 
   getters: {
@@ -153,6 +150,17 @@ export const useMeshStore = defineStore('mesh', {
       } catch (e) {}
     },
 
+    cancelPendingManualPairings() {
+      if (this.pendingNegotiationPC) {
+        // Only close if it was NOT successfully moved to established peerConnections
+        const isEstablished = this.peerConnections.some(c => c._rawPC === this.pendingNegotiationPC && c.open);
+        if (!isEstablished) {
+          try { this.pendingNegotiationPC.close(); } catch (e) {}
+        }
+        this.pendingNegotiationPC = null;
+      }
+    },
+
     stopMesh() {
       if (this.pollInterval) {
         clearInterval(this.pollInterval);
@@ -170,14 +178,13 @@ export const useMeshStore = defineStore('mesh', {
         try { this.peerInstance.destroy(); } catch (e) {}
         this.peerInstance = null;
       }
-      if (this.manualOfferPC) {
-        try { this.manualOfferPC.close(); } catch (e) {}
-        this.manualOfferPC = null;
-      }
-      if (this.manualAnswerPC) {
-        try { this.manualAnswerPC.close(); } catch (e) {}
-        this.manualAnswerPC = null;
-      }
+      this.cancelPendingManualPairings();
+      this.peerConnections.forEach(conn => {
+        if (conn && conn.close) {
+          try { conn.close(); } catch (e) {}
+        }
+      });
+      this.peerConnections = [];
       this.isP2PActive = false;
       this.activePeersCount = 0;
     },
@@ -384,16 +391,13 @@ export const useMeshStore = defineStore('mesh', {
     // ─────────────────────────────────────────────────────────────────────────
     async createOfflineManualOffer(currentUser) {
       try {
-        if (this.manualOfferPC) {
-          try { this.manualOfferPC.close(); } catch (e) {}
-          this.manualOfferPC = null;
-        }
+        // Clean up only previous unestablished negotiations
+        this.cancelPendingManualPairings();
 
         const pc = new RTCPeerConnection({ iceServers: [] });
-        this.manualOfferPC = pc;
+        this.pendingNegotiationPC = pc;
 
         const dc = pc.createDataChannel('salvate_offline_mesh', { ordered: true });
-        this.manualDataChannel = dc;
 
         dc.onopen = () => {
           this.bindManualDataChannel(dc, pc, currentUser);
@@ -427,10 +431,7 @@ export const useMeshStore = defineStore('mesh', {
 
     async createOfflineManualAnswer(offerTokenStr, currentUser) {
       try {
-        if (this.manualAnswerPC) {
-          try { this.manualAnswerPC.close(); } catch (e) {}
-          this.manualAnswerPC = null;
-        }
+        this.cancelPendingManualPairings();
 
         let offerObj = null;
         try {
@@ -441,7 +442,7 @@ export const useMeshStore = defineStore('mesh', {
 
         const offerInfo = expandSDP(offerObj);
         const pc = new RTCPeerConnection({ iceServers: [] });
-        this.manualAnswerPC = pc;
+        this.pendingNegotiationPC = pc;
 
         pc.ondatachannel = (e) => {
           this.bindManualDataChannel(e.channel, pc, currentUser, offerInfo.uid, offerInfo.name);
@@ -480,7 +481,7 @@ export const useMeshStore = defineStore('mesh', {
 
     async applyOfflineManualAnswer(answerTokenStr) {
       try {
-        if (!this.manualOfferPC) {
+        if (!this.pendingNegotiationPC) {
           throw new Error('No hay una oferta activa creada en este dispositivo.');
         }
 
@@ -492,7 +493,7 @@ export const useMeshStore = defineStore('mesh', {
         }
 
         const answerInfo = expandSDP(answerObj);
-        await this.manualOfferPC.setRemoteDescription(new RTCSessionDescription({
+        await this.pendingNegotiationPC.setRemoteDescription(new RTCSessionDescription({
           type: 'answer',
           sdp: answerInfo.sdp
         }));
@@ -513,6 +514,8 @@ export const useMeshStore = defineStore('mesh', {
 
       const wrappedConn = {
         peer: cleanPeerId,
+        _rawPC: pc,
+        _rawChannel: channel,
         open: channel.readyState === 'open',
         isOfflineDirect: true,
         send: (payload) => {
@@ -530,6 +533,12 @@ export const useMeshStore = defineStore('mesh', {
 
       const handleOpen = () => {
         wrappedConn.open = true;
+
+        // Decouple from pending slot so future negotiations won't close this established peer!
+        if (this.pendingNegotiationPC === pc) {
+          this.pendingNegotiationPC = null;
+        }
+
         if (!this.peerConnections.some(c => c.peer === cleanPeerId)) {
           this.peerConnections.push(wrappedConn);
           this.activePeersCount = this.peerConnections.length;
