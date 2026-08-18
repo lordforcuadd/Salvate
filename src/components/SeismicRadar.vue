@@ -17,12 +17,23 @@
         </div>
 
         <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            class="h-8 px-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-emerald-400 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm"
+            title="Forzar actualización en tiempo real del IGP"
+            :disabled="seismicStore.isLoading"
+            @click="refreshDataNow"
+          >
+            <RefreshCw :class="['w-3.5 h-3.5 shrink-0', seismicStore.isLoading ? 'animate-spin' : '']" />
+            <span class="hidden xs:inline">{{ seismicStore.isLoading ? 'Actualizando...' : 'Actualizar' }}</span>
+          </button>
+
           <AppBadge 
             :variant="seismicStore.isLoading ? 'warning' : 'safe'" 
             size="sm" 
             :dot="true"
           >
-            {{ seismicStore.isLoading ? 'Sincronizando...' : 'IGP / CENSIS Listo' }}
+            {{ seismicStore.isLoading ? 'Sincronizando...' : seismicStore.activeSource }}
           </AppBadge>
         </div>
       </div>
@@ -222,9 +233,17 @@
                     {{ event.regionBadge || 'Región Perú' }}
                   </AppBadge>
 
-                  <AppBadge variant="neutral" size="xs">
+                  <AppBadge :variant="event.source.includes('IGP') ? 'safe' : 'neutral'" size="xs">
                     {{ event.source }}
                   </AppBadge>
+
+                  <AppBadge v-if="event.felt" variant="danger" size="xs">
+                    ⚡ Sentido
+                  </AppBadge>
+
+                  <span v-if="event.reportCode" class="text-[10px] font-mono text-zinc-400 font-bold px-1.5 py-0.5 rounded bg-zinc-950 border border-zinc-800">
+                    {{ event.reportCode }}
+                  </span>
                 </div>
 
                 <!-- Complete Date, Time & Depth Metrics -->
@@ -308,6 +327,10 @@ const getTimeRangeLabel = (range) => {
   if (range === '7d') return '7 días';
   if (range === '30d') return '30 días';
   return '24h';
+};
+
+const refreshDataNow = async () => {
+  await seismicStore.fetchSeismicData(authStore.userCoords);
 };
 
 onMounted(async () => {

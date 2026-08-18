@@ -6,7 +6,15 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 export default defineConfig({
   server: {
     host: true,
-    port: 5173
+    port: 5173,
+    proxy: {
+      '/api/igp': {
+        target: 'https://ide.igp.gob.pe/arcgis/rest/services/monitoreocensis/Sismicidad/MapServer/0',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/igp/, ''),
+        secure: false
+      }
+    }
   },
   plugins: [
     vue(),

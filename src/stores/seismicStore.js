@@ -5,7 +5,7 @@ export const useSeismicStore = defineStore('seismic', {
     allEvents: [],
     peruEvents: [],
     isLoading: false,
-    activeSource: 'IGP / USGS Oficial',
+    activeSource: 'IGP • CENSIS Oficial',
     lastUpdated: null,
     pollingInterval: null,
     timeRange: '24h', // '24h' | '7d' | '30d'
@@ -16,7 +16,7 @@ export const useSeismicStore = defineStore('seismic', {
     significantPeruEvent: (state) => {
       const peruList = state.peruEvents || [];
       if (peruList.length === 0) return null;
-      return [...peruList].sort((a, b) => b.magnitude - a.magnitude)[0];
+      return [...peruList].sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0))[0];
     },
   },
 
@@ -28,7 +28,7 @@ export const useSeismicStore = defineStore('seismic', {
       if (!this.pollingInterval) {
         this.pollingInterval = setInterval(() => {
           this.fetchSeismicData(this.userCoords);
-        }, 30000);
+        }, 20000); // Live poll every 20 seconds
       }
     },
 
@@ -50,7 +50,7 @@ export const useSeismicStore = defineStore('seismic', {
           ...evt,
           distanceKm: distKm,
           bearing,
-          intensityDesc: getIntensityDescription(evt.magnitude, distKm)
+          intensityDesc: evt.intensity || getIntensityDescription(evt.magnitude, distKm)
         };
       };
 
@@ -66,107 +66,219 @@ export const useSeismicStore = defineStore('seismic', {
     async fetchSeismicData(userCoords = null) {
       this.isLoading = true;
       const defaultUserCoords = userCoords || this.userCoords || { lat: -12.046374, lng: -77.042793 };
-      let fetchedGlobalEvents = [];
 
-      // Determine endpoint based on selected timeRange (24h, 7d, 30d)
-      let usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson';
-      if (this.timeRange === '7d') {
-        usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson';
-      } else if (this.timeRange === '30d') {
-        usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson';
+      let igpEvents = [];
+      let emscEvents = [];
+      let usgsEvents = [];
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // 1. FUENTE PRINCIPAL: INSTITUTO GEOFÍSICO DEL PERÚ (IGP / CENSIS OFICIAL)
+      // ─────────────────────────────────────────────────────────────────────────
+      const limit = this.timeRange === '24h' ? 25 : (this.timeRange === '7d' ? 60 : 120);
+      const igpQueryPath = `/query?where=1%3D1&outFields=*&f=json&orderByFields=objectid%20desc&resultRecordCount=${limit}`;
+      const officialIgpUrl = `https://ide.igp.gob.pe/arcgis/rest/services/monitoreocensis/Sismicidad/MapServer/0${igpQueryPath}`;
+      
+      const igpUrlsToTry = [
+        `/api/igp${igpQueryPath}`, // Vite Proxy (CORS-free en dev / local)
+        officialIgpUrl, // Directo
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(officialIgpUrl)}` // Fallback CORS mirror
+      ];
+
+      for (const url of igpUrlsToTry) {
+        try {
+          const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+          if (res.ok) {
+            const data = await res.json();
+            const rawFeatures = data.features || [];
+            if (rawFeatures.length > 0) {
+              igpEvents = rawFeatures.map(feat => {
+                const a = feat.attributes || {};
+                const geom = feat.geometry || {};
+                const lat = Number(a.lat !== undefined ? a.lat : geom.y);
+                const lng = Number(a.lon !== undefined ? a.lon : geom.x);
+                const mag = Number(a.magnitud || a.mag || 0);
+                const depthKm = Number(a.prof || 0);
+                const rawTime = a.fechaevento || a.fecha || Date.now();
+                const distKm = Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng));
+                const bearing = calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng);
+
+                const depName = a.departamento ? a.departamento.trim() : '';
+                const regionBadge = depName ? `Región ${depName.toUpperCase()}` : 'Perú';
+
+                return {
+                  id: `igp-${a.objectid || a.code || Math.random().toString(36).substr(2, 5)}`,
+                  source: 'IGP / CENSIS Oficial Perú',
+                  placeTitle: a.ref || (depName ? `Epicentro en ${depName}` : 'Territorio Peruano'),
+                  regionBadge,
+                  magnitude: mag,
+                  time: rawTime,
+                  formattedDateTime: formatPeruDateTime(rawTime),
+                  formattedTime: a.hora || new Date(rawTime).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+                  timeAgo: formatTimeAgo(rawTime),
+                  lat,
+                  lng,
+                  depthKm,
+                  distanceKm: distKm,
+                  bearing,
+                  isPeru: true,
+                  intensity: a.int_ || '',
+                  felt: a.sentido === '1' || Boolean(a.int_),
+                  reportCode: a.code || (a.reporte ? `Reporte N° ${a.reporte}` : ''),
+                  intensityDesc: a.int_ ? `Intensidad: ${a.int_}` : getIntensityDescription(mag, distKm)
+                };
+              });
+              this.activeSource = 'IGP / CENSIS (En Vivo)';
+              break; // Éxito con IGP, salimos del bucle de reintento
+            }
+          }
+        } catch (e) {
+          // Intentar con siguiente URL de IGP
+        }
       }
 
-      // 1. Fetch real USGS GeoJSON feed (includes Peru & Global events)
+      // ─────────────────────────────────────────────────────────────────────────
+      // 2. FUENTE SECUNDARIA EN TIEMPO REAL: EMSC (Red Sismológica Sudamericana)
+      // ─────────────────────────────────────────────────────────────────────────
       try {
-        const usgsRes = await fetch(usgsUrl);
-        if (usgsRes.ok) {
-          const usgsData = await usgsRes.json();
-          const rawFeatures = usgsData.features || [];
-
-          fetchedGlobalEvents = rawFeatures.map(feat => {
-            const props = feat.properties;
-            const coords = feat.geometry.coordinates;
+        const emscUrl = `https://www.seismicportal.eu/fdsnws/event/1/query?format=json&minlat=-19.5&maxlat=0.5&minlon=-82.0&maxlon=-68.0&limit=${limit}`;
+        const emscRes = await fetch(emscUrl, { signal: AbortSignal.timeout(5000) });
+        if (emscRes.ok) {
+          const emscData = await emscRes.json();
+          const rawFeatures = emscData.features || [];
+          emscEvents = rawFeatures.map(feat => {
+            const props = feat.properties || {};
+            const coords = feat.geometry?.coordinates || [0, 0, 0];
             const lng = coords[0];
             const lat = coords[1];
-            const depthKm = coords[2];
-
+            const depthKm = Math.round(coords[2] || props.depth || 0);
+            const mag = Number(props.mag || 0);
             const distKm = Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng));
             const bearing = calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng);
             const isPeru = isPointInPeruBoundingBox(lat, lng);
-
-            const { translatedPlace, regionBadge } = formatPeruPlaceTitle(props.place, lat, lng, isPeru);
+            const { translatedPlace, regionBadge } = formatPeruPlaceTitle(props.flynn_region || props.place, lat, lng, isPeru);
 
             return {
-              id: feat.id,
-              source: isPeru ? 'Monitoreo Sísmico Perú' : 'USGS Global',
+              id: `emsc-${props.unid || feat.id}`,
+              source: props.auth === 'IGP' ? 'IGP / CENSIS (vía EMSC)' : 'Red Sismológica EMSC',
               placeTitle: translatedPlace,
-              regionBadge: regionBadge,
-              magnitude: props.mag || 0,
+              regionBadge,
+              magnitude: mag,
               time: props.time,
               formattedDateTime: formatPeruDateTime(props.time),
-              formattedTime: new Date(props.time).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false }),
+              formattedTime: new Date(props.time).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
               timeAgo: formatTimeAgo(props.time),
               lat,
               lng,
-              depthKm: Math.round(depthKm),
+              depthKm,
               distanceKm: distKm,
               bearing,
               isPeru,
-              intensityDesc: getIntensityDescription(props.mag, distKm)
+              intensity: '',
+              felt: false,
+              intensityDesc: getIntensityDescription(mag, distKm)
             };
           });
         }
-      } catch (err) {
-        console.warn('Could not fetch USGS feed (working in offline/cache mode):', err);
-      }
+      } catch (err) {}
 
-      // 2. Fallback offline simulation drills (Clearly tagged as DEMO/SIMULACRO so users are never misled)
-      const peruRealEvents = fetchedGlobalEvents.filter(e => e.isPeru);
-      let combinedPeru = [...peruRealEvents];
+      // ─────────────────────────────────────────────────────────────────────────
+      // 3. FUENTE GLOBAL / DE RESPALDO: USGS (US Geological Survey GeoJSON Feed)
+      // ─────────────────────────────────────────────────────────────────────────
+      try {
+        let usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson';
+        if (this.timeRange === '7d') {
+          usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson';
+        } else if (this.timeRange === '30d') {
+          usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson';
+        }
 
-      if (combinedPeru.length === 0 && fetchedGlobalEvents.length === 0) {
-        // Only if completely offline and zero cached events, provide clearly labeled demo drill events
-        const drillEvents = [
-          {
-            id: 'simulacro-igp-01',
-            source: 'Simulacro / Demo IGP',
-            placeTitle: '58 km al SO de Sechura, Sechura - Piura',
-            regionBadge: 'Región Piura (Simulacro)',
-            magnitude: 3.8,
-            time: '2026-08-12T10:46:37-05:00',
-            formattedDateTime: formatPeruDateTime('2026-08-12T10:46:37-05:00'),
-            formattedTime: '10:46:37',
-            timeAgo: formatTimeAgo('2026-08-12T10:46:37-05:00'),
-            lat: -5.89,
-            lng: -81.23,
-            depthKm: 29,
-            distanceKm: Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23)),
-            bearing: calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23),
-            isPeru: true,
-            isDemo: true,
-            intensityDesc: getIntensityDescription(3.8, Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, -5.89, -81.23)))
+        const usgsRes = await fetch(usgsUrl, { signal: AbortSignal.timeout(6000) });
+        if (usgsRes.ok) {
+          const usgsData = await usgsRes.json();
+          const rawFeatures = usgsData.features || [];
+          usgsEvents = rawFeatures.map(feat => {
+            const props = feat.properties || {};
+            const coords = feat.geometry?.coordinates || [0, 0, 0];
+            const lng = coords[0];
+            const lat = coords[1];
+            const depthKm = Math.round(coords[2] || 0);
+            const mag = Number(props.mag || 0);
+            const distKm = Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng));
+            const bearing = calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng);
+            const isPeru = isPointInPeruBoundingBox(lat, lng);
+            const { translatedPlace, regionBadge } = formatPeruPlaceTitle(props.place, lat, lng, isPeru);
+
+            return {
+              id: `usgs-${feat.id}`,
+              source: isPeru ? 'Monitoreo Sísmico Perú' : 'USGS Global',
+              placeTitle: translatedPlace,
+              regionBadge,
+              magnitude: mag,
+              time: props.time,
+              formattedDateTime: formatPeruDateTime(props.time),
+              formattedTime: new Date(props.time).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+              timeAgo: formatTimeAgo(props.time),
+              lat,
+              lng,
+              depthKm,
+              distanceKm: distKm,
+              bearing,
+              isPeru,
+              intensity: '',
+              felt: false,
+              intensityDesc: getIntensityDescription(mag, distKm)
+            };
+          });
+        }
+      } catch (err) {}
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // 4. UNIFICACIÓN Y DEDUPLICACIÓN INTELIGENTE (Prioridad IGP Oficial)
+      // ─────────────────────────────────────────────────────────────────────────
+      const allRawEvents = [...igpEvents, ...emscEvents, ...usgsEvents];
+
+      // Filtrar según el timeRange seleccionado
+      const nowMs = Date.now();
+      const maxAgeHours = this.timeRange === '24h' ? 24 : (this.timeRange === '7d' ? 168 : 720);
+      const maxAgeMs = maxAgeHours * 3600 * 1000;
+
+      const filteredByTime = allRawEvents.filter(e => {
+        const evtTime = new Date(e.time).getTime();
+        return !isNaN(evtTime) && (nowMs - evtTime) <= maxAgeMs;
+      });
+
+      // Deduplicar eventos dentro de ±120s y distancia < 50km
+      const deduplicatedList = [];
+      for (const evt of filteredByTime) {
+        const evtTime = new Date(evt.time).getTime();
+        const duplicate = deduplicatedList.find(existing => {
+          const exTime = new Date(existing.time).getTime();
+          const timeDiff = Math.abs(evtTime - exTime);
+          const distDiff = calculateHaversineDistance(evt.lat, evt.lng, existing.lat, existing.lng);
+          return timeDiff < 120000 && distDiff < 60;
+        });
+
+        if (!duplicate) {
+          deduplicatedList.push(evt);
+        } else {
+          // Si el duplicado nuevo es del IGP oficial, sobrescribir con los datos del IGP
+          if (evt.source.includes('IGP') && !duplicate.source.includes('IGP')) {
+            const idx = deduplicatedList.indexOf(duplicate);
+            deduplicatedList[idx] = evt;
           }
-        ];
-        combinedPeru = drillEvents;
+        }
       }
 
-      const uniquePeruMap = new Map();
-      combinedPeru.forEach(item => {
-        if (!uniquePeruMap.has(item.id)) {
-          uniquePeruMap.set(item.id, item);
-        }
-      });
+      // Separar eventos de Perú y eventos globales
+      const peruOnly = deduplicatedList
+        .filter(e => e.isPeru || isPointInPeruBoundingBox(e.lat, e.lng))
+        .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0));
 
-      const uniqueGlobalMap = new Map();
-      [...combinedPeru, ...fetchedGlobalEvents].forEach(item => {
-        if (!uniqueGlobalMap.has(item.id)) {
-          uniqueGlobalMap.set(item.id, item);
-        }
-      });
+      const allSorted = [...deduplicatedList]
+        .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0));
 
-      this.peruEvents = Array.from(uniquePeruMap.values()).sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0));
-      this.allEvents = Array.from(uniqueGlobalMap.values()).sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0));
-      
+      this.peruEvents = peruOnly;
+      this.allEvents = allSorted;
       this.lastUpdated = new Date().toISOString();
       this.isLoading = false;
     }
@@ -230,7 +342,7 @@ function formatPeruPlaceTitle(rawPlace, lat, lng, isPeru) {
   let regionBadge = isPeru ? 'Costa / Centro Perú' : 'Global';
   const peruDepartments = [
     'Lima', 'Callao', 'Arequipa', 'Ica', 'Moquegua', 'Tacna', 'Piura', 
-    'Tumbes', 'Lambayeque', 'La Libertad', 'Ancash', 'Cusco', 'Puno', 
+    'Tumbes', 'Lambayeque', 'La Libertad', 'Áncash', 'Ancash', 'Cusco', 'Puno', 
     'Loreto', 'Ucayali', 'San Martín', 'Junín', 'Ayacucho', 'Huancavelica', 
     'Pasco', 'Huánuco', 'Amazonas', 'Cajamarca', 'Apurímac', 'Madre de Dios'
   ];
