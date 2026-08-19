@@ -98,23 +98,23 @@ export const useSeismicStore = defineStore('seismic', {
                 const lng = Number(a.lon !== undefined ? a.lon : geom.x);
                 const mag = Number(a.magnitud || a.mag || 0);
                 const depthKm = Number(a.prof || 0);
-                const rawTime = a.fechaevento || a.fecha || Date.now();
+
+                // Normalizar timestamp exacto de Perú (corrigiendo el desfase de 5 horas de ArcGIS)
+                const realTimeMs = parseIgpEventTimestamp(a);
                 const distKm = Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng));
                 const bearing = calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng);
-
-                const depName = a.departamento ? a.departamento.trim() : '';
-                const regionBadge = depName ? `Región ${depName.toUpperCase()}` : 'Perú';
+                const regionBadge = getIgpRegionBadge(a.departamento, a.ref);
 
                 return {
                   id: `igp-${a.objectid || a.code || Math.random().toString(36).substr(2, 5)}`,
                   source: 'IGP / CENSIS Oficial Perú',
-                  placeTitle: a.ref || (depName ? `Epicentro en ${depName}` : 'Territorio Peruano'),
+                  placeTitle: a.ref || (regionBadge ? `Epicentro en ${regionBadge}` : 'Territorio Peruano'),
                   regionBadge,
                   magnitude: mag,
-                  time: rawTime,
-                  formattedDateTime: formatPeruDateTime(rawTime),
-                  formattedTime: a.hora || new Date(rawTime).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-                  timeAgo: formatTimeAgo(rawTime),
+                  time: realTimeMs,
+                  formattedDateTime: formatPeruDateTime(realTimeMs),
+                  formattedTime: a.hora || new Date(realTimeMs).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+                  timeAgo: formatTimeAgo(realTimeMs),
                   lat,
                   lng,
                   depthKm,
@@ -124,7 +124,7 @@ export const useSeismicStore = defineStore('seismic', {
                   intensity: a.int_ || '',
                   felt: a.sentido === '1' || Boolean(a.int_),
                   reportCode: a.code || (a.reporte ? `Reporte N° ${a.reporte}` : ''),
-                  intensityDesc: a.int_ ? `Intensidad: ${a.int_}` : getIntensityDescription(mag, distKm)
+                  intensityDesc: a.int_ ? a.int_ : getIntensityDescription(mag, distKm)
                 };
               });
               this.activeSource = 'IGP / CENSIS (En Vivo)';
@@ -156,6 +156,7 @@ export const useSeismicStore = defineStore('seismic', {
             const bearing = calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng);
             const isPeru = isPointInPeruBoundingBox(lat, lng);
             const { translatedPlace, regionBadge } = formatPeruPlaceTitle(props.flynn_region || props.place, lat, lng, isPeru);
+            const realTimeMs = new Date(props.time).getTime();
 
             return {
               id: `emsc-${props.unid || feat.id}`,
@@ -163,10 +164,10 @@ export const useSeismicStore = defineStore('seismic', {
               placeTitle: translatedPlace,
               regionBadge,
               magnitude: mag,
-              time: props.time,
-              formattedDateTime: formatPeruDateTime(props.time),
-              formattedTime: new Date(props.time).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-              timeAgo: formatTimeAgo(props.time),
+              time: realTimeMs,
+              formattedDateTime: formatPeruDateTime(realTimeMs),
+              formattedTime: new Date(realTimeMs).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+              timeAgo: formatTimeAgo(realTimeMs),
               lat,
               lng,
               depthKm,
@@ -207,6 +208,7 @@ export const useSeismicStore = defineStore('seismic', {
             const bearing = calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng);
             const isPeru = isPointInPeruBoundingBox(lat, lng);
             const { translatedPlace, regionBadge } = formatPeruPlaceTitle(props.place, lat, lng, isPeru);
+            const realTimeMs = new Date(props.time).getTime();
 
             return {
               id: `usgs-${feat.id}`,
@@ -214,10 +216,10 @@ export const useSeismicStore = defineStore('seismic', {
               placeTitle: translatedPlace,
               regionBadge,
               magnitude: mag,
-              time: props.time,
-              formattedDateTime: formatPeruDateTime(props.time),
-              formattedTime: new Date(props.time).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-              timeAgo: formatTimeAgo(props.time),
+              time: realTimeMs,
+              formattedDateTime: formatPeruDateTime(realTimeMs),
+              formattedTime: new Date(realTimeMs).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+              timeAgo: formatTimeAgo(realTimeMs),
               lat,
               lng,
               depthKm,
@@ -247,7 +249,7 @@ export const useSeismicStore = defineStore('seismic', {
         return !isNaN(evtTime) && (nowMs - evtTime) <= maxAgeMs;
       });
 
-      // Deduplicar eventos dentro de ±120s y distancia < 50km
+      // Deduplicar eventos dentro de ±180s y distancia < 60km
       const deduplicatedList = [];
       for (const evt of filteredByTime) {
         const evtTime = new Date(evt.time).getTime();
@@ -255,13 +257,13 @@ export const useSeismicStore = defineStore('seismic', {
           const exTime = new Date(existing.time).getTime();
           const timeDiff = Math.abs(evtTime - exTime);
           const distDiff = calculateHaversineDistance(evt.lat, evt.lng, existing.lat, existing.lng);
-          return timeDiff < 120000 && distDiff < 60;
+          return timeDiff < 180000 && distDiff < 60;
         });
 
         if (!duplicate) {
           deduplicatedList.push(evt);
         } else {
-          // Si el duplicado nuevo es del IGP oficial, sobrescribir con los datos del IGP
+          // Si el duplicado nuevo es del IGP oficial, sobrescribir con los datos detallados del IGP
           if (evt.source.includes('IGP') && !duplicate.source.includes('IGP')) {
             const idx = deduplicatedList.indexOf(duplicate);
             deduplicatedList[idx] = evt;
@@ -284,6 +286,44 @@ export const useSeismicStore = defineStore('seismic', {
     }
   }
 });
+
+function parseIgpEventTimestamp(a) {
+  if (a.hora && a.fecha) {
+    const d = new Date(a.fecha);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const isoStr = `${y}-${m}-${day}T${a.hora}-05:00`;
+    const parsed = new Date(isoStr).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (a.fechaevento) {
+    // IGP ArcGIS database stores local Peru wall-clock time as a naive UTC epoch (offset of +5h to get real UTC)
+    return Number(a.fechaevento) + (5 * 3600 * 1000);
+  }
+  return Date.now();
+}
+
+function getIgpRegionBadge(departamento, ref) {
+  const dep = (departamento || '').trim().toUpperCase();
+  if (dep && dep !== 'OCEANO' && dep !== 'MAR' && dep !== 'PERU') {
+    return `Región ${dep}`;
+  }
+  const peruDepartments = [
+    'Lima', 'Callao', 'Arequipa', 'Ica', 'Moquegua', 'Tacna', 'Piura', 
+    'Tumbes', 'Lambayeque', 'La Libertad', 'Áncash', 'Ancash', 'Cusco', 'Puno', 
+    'Loreto', 'Ucayali', 'San Martín', 'Junín', 'Ayacucho', 'Huancavelica', 
+    'Pasco', 'Huánuco', 'Amazonas', 'Cajamarca', 'Apurímac', 'Madre de Dios'
+  ];
+  if (ref) {
+    for (const d of peruDepartments) {
+      if (new RegExp(`\\b${d}\\b`, 'i').test(ref)) {
+        return dep === 'OCEANO' ? `Región ${d.toUpperCase()} (Costa / Mar)` : `Región ${d.toUpperCase()}`;
+      }
+    }
+  }
+  return 'Costa / Mar Peruano';
+}
 
 function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -349,7 +389,7 @@ function formatPeruPlaceTitle(rawPlace, lat, lng, isPeru) {
 
   for (const dep of peruDepartments) {
     if (new RegExp(`\\b${dep}\\b`, 'i').test(rawPlace)) {
-      regionBadge = `Región ${dep}`;
+      regionBadge = `Región ${dep.toUpperCase()}`;
       break;
     }
   }
@@ -379,6 +419,7 @@ function formatPeruDateTime(isoOrEpoch) {
 function formatTimeAgo(isoOrEpoch) {
   try {
     const diffMs = Date.now() - new Date(isoOrEpoch).getTime();
+    if (diffMs < 0) return 'Hace un momento';
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return 'Hace un momento';
     if (diffMins < 60) return `Hace ${diffMins} min`;
