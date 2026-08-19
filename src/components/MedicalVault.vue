@@ -227,6 +227,12 @@
                 <p class="text-[11px] text-rose-200/90 leading-snug mt-0.5">{{ guide.warnings }}</p>
               </div>
             </div>
+
+            <!-- Guide Footer Medical Legal Disclaimer -->
+            <div class="pt-1.5 text-[10px] text-zinc-400 italic flex items-center gap-1.5 border-t border-zinc-800/50">
+              <Info class="w-3 h-3 text-zinc-400 shrink-0" />
+              <span>* Esta guía es una referencia de primeros auxilios y no reemplaza la atención médica profesional. Contacta al 116 / 106 de inmediato.</span>
+            </div>
           </div>
 
         </div>
@@ -273,7 +279,7 @@
               <button
                 type="button"
                 class="text-[10px] text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
-                @click="medicalStore.resetChecklist('backpack')"
+                @click="confirmResetChecklist('backpack')"
               >
                 Reiniciar
               </button>
@@ -319,7 +325,7 @@
               <button
                 type="button"
                 class="text-[10px] text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
-                @click="medicalStore.resetChecklist('pets')"
+                @click="confirmResetChecklist('pets')"
               >
                 Reiniciar
               </button>
@@ -599,6 +605,20 @@ const confirmDeleteMember = (member) => {
     variant: 'danger',
     onConfirm: async () => {
       await medicalStore.deleteMember(member.id);
+    }
+  });
+};
+
+const confirmResetChecklist = (type) => {
+  const isBackpack = type === 'backpack';
+  dialogStore.confirm({
+    title: isBackpack ? '¿Reiniciar lista de mochila 72h?' : '¿Reiniciar lista de mascotas?',
+    message: 'Se desmarcarán todos los elementos de la lista. Esta acción no se puede deshacer.',
+    confirmText: 'Reiniciar Lista',
+    cancelText: 'Cancelar',
+    variant: 'warning',
+    onConfirm: async () => {
+      await medicalStore.resetChecklist(type);
     }
   });
 };

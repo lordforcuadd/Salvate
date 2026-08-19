@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { Peer } from 'peerjs';
 import { saveDBItem, getAllDBItems, deleteDBItem } from '../services/db';
 import { useAuthStore } from './authStore';
+import { useHazardStore } from './hazardStore';
 
 // Ultra-compact SDP Minifier (reduces 1500+ byte WebRTC SDP down to ~150 bytes for ultra-fast QR scanning)
 function minifySDP(sdp, uid, name, type) {
@@ -107,6 +108,10 @@ export const useMeshStore = defineStore('mesh', {
         window.addEventListener('storage', (e) => {
           if (e.key === 'salvate_broadcast_update' || e.key === 'salvate_users_update') {
             this.reloadFromDB();
+          }
+          if (e.key === 'salvate_hazards_update') {
+            const hazardStore = useHazardStore();
+            hazardStore.initHazardStore();
           }
           if (e.key === 'salvate_live_gossip' && e.newValue) {
             try {
@@ -888,6 +893,48 @@ export const useMeshStore = defineStore('mesh', {
             }
           });
         }
+        return;
+      }
+
+      if (data.type === 'GOSSIP_HAZARD') {
+        const hazard = data.payload;
+        if (!hazard || !hazard.id) return;
+
+        const hazardStore = useHazardStore();
+        const exists = hazardStore.hazards.some(h => h.id === hazard.id);
+        if (!exists) {
+          hazard.hopCount = (hazard.hopCount || 1) + 1;
+          hazardStore.hazards.unshift(hazard);
+          await saveDBItem('hazard_reports', hazard);
+          
+          localStorage.setItem('salvate_hazards_update', Date.now().toString());
+
+          if (hazard.authorId !== currentUserId) {
+            this.pushNotification({
+              type: 'hazard',
+              status: hazard.severity === 'alta' ? 'Requiere ayuda' : 'En traslado',
+              title: `Alerta: ${hazard.title || 'Peligro Reportado'}`,
+              message: `${hazard.description || 'Peligro en la zona'} (${hazard.authorName || 'Comunidad'})`
+            });
+          }
+
+          this.broadcastGossipLocally({
+            type: 'GOSSIP_HAZARD',
+            payload: hazard
+          });
+
+          this.peerConnections.forEach(conn => {
+            if (conn && conn.open && conn.peer !== hazard.authorId) {
+              try {
+                conn.send({
+                  type: 'GOSSIP_HAZARD',
+                  payload: hazard
+                });
+              } catch (e) {}
+            }
+          });
+        }
+        return;
       }
     },
 
@@ -905,6 +952,8 @@ export const useMeshStore = defineStore('mesh', {
         }
       } else if (type === 'broadcast') {
         colorClass = 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100';
+      } else if (type === 'hazard') {
+        colorClass = 'bg-amber-950/90 border-amber-500/50 text-amber-100';
       }
 
       const now = new Date();

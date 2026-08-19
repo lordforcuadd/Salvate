@@ -1,0 +1,5 @@
+# API Proxy for IGP / CENSIS ArcGIS REST services
+/api/igp/*  https://ide.igp.gob.pe/arcgis/rest/services/monitoreocensis/Sismicidad/MapServer/0/:splat  200
+
+# SPA fallback
+/*  /index.html  200

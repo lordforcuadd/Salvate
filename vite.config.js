@@ -118,5 +118,19 @@ export default defineConfig({
         ]
       }
     })
-  ]
+  ],
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'pinia'],
+          'vendor-maps': ['leaflet'],
+          'vendor-webrtc': ['peerjs'],
+          'vendor-qr': ['qrcode', 'jsqr'],
+          'vendor-icons': ['lucide-vue-next']
+        }
+      }
+    }
+  }
 });

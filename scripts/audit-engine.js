@@ -139,17 +139,24 @@ function auditFile(filePath) {
       }
     });
 
-    // Check for interactive buttons without cursor-pointer or touch feedback
-    lines.forEach((line, idx) => {
-      if (line.includes('<button') && !line.includes('cursor-pointer') && !line.includes('touch-btn')) {
+    // Check for interactive buttons without cursor-pointer or touch feedback across full multiline tag
+    const buttonRegex = /<button\b([\s\S]*?)>/g;
+    let btnMatch;
+    while ((btnMatch = buttonRegex.exec(content)) !== null) {
+      const tagContent = btnMatch[1];
+      const hasFeedback = tagContent.includes('cursor-pointer') || 
+                          tagContent.includes('touch-btn') || 
+                          tagContent.includes('active:scale-95');
+      if (!hasFeedback) {
+        const lineNum = content.substring(0, btnMatch.index).split('\n').length;
         auditResults.optimizations.push({
-          file: `${relPath}:${idx + 1}`,
+          file: `${relPath}:${lineNum}`,
           type: 'Ergonomía Táctil Móvil',
           category: 'uiUxIssues',
           message: 'Botón sin clase de feedback táctil (`active:scale-95` o `cursor-pointer`).'
         });
       }
-    });
+    }
   }
 
   // Rule C: Vue 3 / JS Best Practices

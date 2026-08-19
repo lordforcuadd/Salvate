@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { getAllDBItems, saveDBItem, deleteDBItem } from '../services/db';
 import { useMeshStore } from './meshStore';
+import { useAuthStore } from './authStore';
 
 export const useHazardStore = defineStore('hazard', {
   state: () => ({
@@ -23,6 +24,7 @@ export const useHazardStore = defineStore('hazard', {
     },
 
     async addHazardReport(reportData) {
+      const authStore = useAuthStore();
       const newReport = {
         id: `hz-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         type: reportData.type,
@@ -30,15 +32,18 @@ export const useHazardStore = defineStore('hazard', {
         description: reportData.description || '',
         severity: reportData.severity || 'media',
         coords: reportData.coords || { lat: -12.046374, lng: -77.042793 },
-        authorName: reportData.authorName || 'Anónimo',
+        authorId: authStore.userId,
+        authorName: reportData.authorName || authStore.userName || 'Anónimo',
         timestamp: new Date().toISOString(),
-        synced: navigator.onLine
+        synced: navigator.onLine,
+        hopCount: 1
       };
 
       // Add locally
       this.hazards.unshift(newReport);
       await saveDBItem('hazard_reports', newReport);
       this.syncPendingCount = this.hazards.filter(h => !h.synced).length;
+      localStorage.setItem('salvate_hazards_update', Date.now().toString());
 
       // Broadcast over P2P mesh & BroadcastChannel to other devices
       const meshStore = useMeshStore();
@@ -48,12 +53,10 @@ export const useHazardStore = defineStore('hazard', {
         payload: newReport
       };
 
-      if (meshStore.broadcastChannel) {
-        meshStore.broadcastChannel.postMessage(hazardPayload);
-      }
+      meshStore.broadcastGossipLocally(hazardPayload);
 
       meshStore.peerConnections.forEach(conn => {
-        if (conn.open) {
+        if (conn && conn.open) {
           try { conn.send(hazardPayload); } catch (e) {}
         }
       });

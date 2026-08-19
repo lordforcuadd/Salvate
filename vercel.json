@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/igp/(.*)",
+      "destination": "https://ide.igp.gob.pe/arcgis/rest/services/monitoreocensis/Sismicidad/MapServer/0/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
