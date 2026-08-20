@@ -38,19 +38,19 @@
           <span class="truncate">{{ authStore.isOnline ? 'Online' : 'Sin Internet' }}</span>
         </div>
 
-        <!-- Mobile Native Notification Bell / Toggle -->
+        <!-- Notification Toggle Button (Pure Activation / Deactivation Switch) -->
         <button
           type="button"
           :class="[
             'h-8 sm:h-9 px-2 sm:px-2.5 rounded-xl border flex items-center justify-center gap-1.5 transition-all shrink-0 cursor-pointer active:scale-95 relative',
-            notificationStore.hasPermission
-              ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-emerald-400'
-              : 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25'
+            notificationStore.soundEnabled && notificationStore.hasPermission
+              ? 'bg-zinc-900 border-zinc-800 text-emerald-400 hover:bg-zinc-800'
+              : 'bg-zinc-900/60 border-zinc-800 text-zinc-500 hover:text-zinc-300'
           ]"
-          :title="notificationStore.hasPermission ? 'Alertas en el celular activadas' : 'Toca para activar alertas y notificaciones en tu celular'"
-          @click="toggleOrRequestNotifications"
+          :title="notificationStore.soundEnabled && notificationStore.hasPermission ? 'Notificaciones activadas (Clic para desactivar)' : 'Notificaciones desactivadas (Clic para activar)'"
+          @click="toggleNotifications"
         >
-          <component :is="notificationStore.hasPermission ? Bell : BellRing" class="w-4 h-4 shrink-0" />
+          <component :is="notificationStore.soundEnabled && notificationStore.hasPermission ? Bell : BellOff" class="w-4 h-4 shrink-0" />
           <span 
             v-if="notificationStore.hasUnread" 
             class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white font-black text-[10px] flex items-center justify-center border-2 border-black animate-pulse"
@@ -185,7 +185,7 @@ import { useNotificationStore } from '../stores/notificationStore';
 import AppBadge from './ui/AppBadge.vue';
 import AppButton from './ui/AppButton.vue';
 import AppModal from './ui/AppModal.vue';
-import { ShieldAlert, User, HelpCircle, RotateCcw, Wifi, WifiOff, Bell, BellRing } from 'lucide-vue-next';
+import { ShieldAlert, User, HelpCircle, RotateCcw, Wifi, WifiOff, Bell, BellOff } from 'lucide-vue-next';
 
 defineEmits(['open-profile']);
 const authStore = useAuthStore();
@@ -194,24 +194,9 @@ const notificationStore = useNotificationStore();
 
 const showHelpModal = ref(false);
 
-const toggleOrRequestNotifications = async () => {
+const toggleNotifications = async () => {
   if (!notificationStore.hasPermission) {
-    const result = await notificationStore.requestPermission();
-    if (result === 'granted') {
-      dialogStore.alert({
-        title: '¡Alertas Activadas!',
-        message: 'Recibirás avisos sonoros y notificaciones nativas en tu celular ante sismos, notas de voz y alertas comunitarias.',
-        confirmText: 'Entendido',
-        variant: 'info'
-      });
-    } else {
-      dialogStore.alert({
-        title: 'Permiso Requerido',
-        message: 'Para recibir alertas cuando la pantalla esté bloqueada, habilita los permisos de notificaciones en los ajustes de tu navegador.',
-        confirmText: 'Entendido',
-        variant: 'warning'
-      });
-    }
+    await notificationStore.requestPermission();
   } else {
     notificationStore.soundEnabled = !notificationStore.soundEnabled;
     notificationStore.vibrationEnabled = notificationStore.soundEnabled;

@@ -383,10 +383,14 @@ watch(activeTab, (newTab) => {
   notificationStore.clearUnread(newTab);
 });
 
-onMounted(() => {
+onMounted(async () => {
   authStore.initAuth();
   if (authStore.isAuthenticated) {
     meshStore.initMesh(authStore.user);
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      notificationStore.requestPermission();
+    }
+    await authStore.captureInitialLocation();
   }
   if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     notificationStore.permission = 'granted';

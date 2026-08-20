@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { saveDBItem, clearDBStore, masterDeleteWholeDB } from '../services/db';
 import { useMeshStore } from './meshStore';
+import { useSeismicStore } from './seismicStore';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -39,10 +40,41 @@ export const useAuthStore = defineStore('auth', {
           this.user = JSON.parse(savedUser);
           this.isAuthenticated = true;
           saveDBItem('users', this.user);
+          this.captureInitialLocation();
         } catch (e) {
           console.error('Error parsing stored user:', e);
         }
       }
+    },
+
+    async captureInitialLocation() {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
+      return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const freshCoords = {
+              lat: Number(pos.coords.latitude.toFixed(6)),
+              lng: Number(pos.coords.longitude.toFixed(6)),
+              accuracy: Math.round(pos.coords.accuracy || 0)
+            };
+            this.setUserCoords(freshCoords);
+            try {
+              const seismicStore = useSeismicStore();
+              seismicStore.updateUserCoordsAndRecalculate(freshCoords);
+            } catch (e) {}
+            resolve(freshCoords);
+          },
+          (err) => {
+            console.warn('Geolocation capture:', err);
+            resolve(null);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 5000
+          }
+        );
+      });
     },
 
     loginWithName(name) {

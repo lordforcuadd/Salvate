@@ -240,12 +240,24 @@ let userMarker = null;
 
 onMounted(async () => {
   await hazardStore.initHazardStore();
+  if (!authStore.userCoords) {
+    await authStore.captureInitialLocation();
+  }
   await nextTick();
   initMap();
 });
 
 watch(() => hazardStore.activeHazards, () => {
   updateMapMarkers();
+}, { deep: true });
+
+watch(() => authStore.userCoords, (newCoords) => {
+  if (newCoords && map) {
+    map.setView([newCoords.lat, newCoords.lng], 15);
+    if (userMarker) {
+      userMarker.setLatLng([newCoords.lat, newCoords.lng]);
+    }
+  }
 }, { deep: true });
 
 const initMap = () => {

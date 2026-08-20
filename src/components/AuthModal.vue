@@ -56,16 +56,22 @@
 <script setup>
 import { ref } from 'vue';
 import { useAuthStore } from '../stores/authStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import AppInput from './ui/AppInput.vue';
 import AppButton from './ui/AppButton.vue';
 import { ShieldAlert, User, ArrowRight, WifiOff } from 'lucide-vue-next';
 
 const authStore = useAuthStore();
+const notificationStore = useNotificationStore();
 const inputName = ref('');
 
-const handleSubmit = () => {
+const handleSubmit = async () => {
   if (inputName.value.trim()) {
     authStore.loginWithName(inputName.value);
+    // Request native notifications immediately upon entering
+    notificationStore.requestPermission();
+    // Capture user's real GPS position immediately
+    await authStore.captureInitialLocation();
   }
 };
 </script>

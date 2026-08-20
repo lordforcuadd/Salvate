@@ -273,7 +273,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useAuthStore } from '../stores/authStore';
 import { useMeshStore } from '../stores/meshStore';
 import AppBadge from './ui/AppBadge.vue';
@@ -297,8 +297,15 @@ const meshStore = useMeshStore();
 
 const isLocating = ref(false);
 const showLocationModal = ref(false);
-const currentCoords = ref({ lat: -12.046374, lng: -77.042793, accuracy: 50 });
-const gpsLocationText = ref('Lima Centro');
+const currentCoords = ref(authStore.userCoords || { lat: -12.046374, lng: -77.042793, accuracy: 50 });
+const gpsLocationText = ref(authStore.userCoords ? `GPS: ${authStore.userCoords.lat.toFixed(2)}, ${authStore.userCoords.lng.toFixed(2)}` : 'Detectando GPS...');
+
+watch(() => authStore.userCoords, (newCoords) => {
+  if (newCoords) {
+    currentCoords.value = newCoords;
+    gpsLocationText.value = `GPS: ${newCoords.lat.toFixed(2)}, ${newCoords.lng.toFixed(2)}`;
+  }
+}, { deep: true });
 
 const peruvianRegions = [
   { name: 'Lima', lat: -12.046374, lng: -77.042793 },

@@ -334,6 +334,9 @@ const refreshDataNow = async () => {
 };
 
 onMounted(async () => {
+  if (!authStore.userCoords) {
+    await authStore.captureInitialLocation();
+  }
   await seismicStore.initSeismicStore(authStore.userCoords);
   await nextTick();
   initMap();
@@ -349,6 +352,7 @@ watch(() => authStore.userCoords, (newCoords) => {
   if (newCoords) {
     if (map) {
       updateUserMarker(newCoords.lat, newCoords.lng);
+      map.setView([newCoords.lat, newCoords.lng], map.getZoom());
     }
     seismicStore.updateUserCoordsAndRecalculate(newCoords);
   }
