@@ -51,6 +51,7 @@ export const useSeismicStore = defineStore('seismic', {
           mag: evt.magnitude,
           depthKm: evt.depthKm,
           distKm,
+          bearing,
           intensity: evt.intensity,
           felt: evt.felt,
           source: evt.source,
@@ -65,7 +66,7 @@ export const useSeismicStore = defineStore('seismic', {
           hypoDistKm: telemetry.hypoDistKm,
           perceptionTag: telemetry.perceptionTag,
           depthTag: telemetry.depthTag,
-          proximityTag: telemetry.proximityTag,
+          proximityText: telemetry.proximityText,
           intensityDesc: telemetry.intensityDesc
         };
       };
@@ -127,6 +128,7 @@ export const useSeismicStore = defineStore('seismic', {
                   mag,
                   depthKm,
                   distKm,
+                  bearing,
                   intensity,
                   felt,
                   source: 'IGP / CENSIS',
@@ -156,7 +158,7 @@ export const useSeismicStore = defineStore('seismic', {
                   hypoDistKm: telemetry.hypoDistKm,
                   perceptionTag: telemetry.perceptionTag,
                   depthTag: telemetry.depthTag,
-                  proximityTag: telemetry.proximityTag,
+                  proximityText: telemetry.proximityText,
                   intensityDesc: telemetry.intensityDesc
                 };
               });
@@ -195,6 +197,7 @@ export const useSeismicStore = defineStore('seismic', {
               mag,
               depthKm,
               distKm,
+              bearing,
               intensity: '',
               felt: false,
               source: 'EMSC',
@@ -223,7 +226,7 @@ export const useSeismicStore = defineStore('seismic', {
               hypoDistKm: telemetry.hypoDistKm,
               perceptionTag: telemetry.perceptionTag,
               depthTag: telemetry.depthTag,
-              proximityTag: telemetry.proximityTag,
+              proximityText: telemetry.proximityText,
               intensityDesc: telemetry.intensityDesc
             };
           });
@@ -262,6 +265,7 @@ export const useSeismicStore = defineStore('seismic', {
               mag,
               depthKm,
               distKm,
+              bearing,
               intensity: '',
               felt: false,
               source: 'USGS',
@@ -290,7 +294,7 @@ export const useSeismicStore = defineStore('seismic', {
               hypoDistKm: telemetry.hypoDistKm,
               perceptionTag: telemetry.perceptionTag,
               depthTag: telemetry.depthTag,
-              proximityTag: telemetry.proximityTag,
+              proximityText: telemetry.proximityText,
               intensityDesc: telemetry.intensityDesc
             };
           });
@@ -367,7 +371,7 @@ export const useSeismicStore = defineStore('seismic', {
   }
 });
 
-export function computeSeismicTelemetry({ mag, depthKm, distKm, intensity, felt, source, isPeru }) {
+export function computeSeismicTelemetry({ mag, depthKm, distKm, bearing, intensity, felt, source, isPeru }) {
   // 1. Technical Classification (Sismo vs Terremoto vs Temblor)
   let classification = {
     label: 'TEMBLOR LEVE',
@@ -410,101 +414,92 @@ export function computeSeismicTelemetry({ mag, depthKm, distKm, intensity, felt,
   // 2. Hypocentral distance (3D Euclidean distance considering focal depth)
   const hypoDistKm = Math.round(Math.sqrt((distKm * distKm) + (depthKm * depthKm)));
 
-  // 3. Perception / Felt Analysis (Pure reactive calculation combining 3D distance, magnitude and local intensity)
+  // 3. Perception / Felt Analysis (Natural, accessible language)
   let perceptionTag = null;
   const intensityClean = (intensity || '').trim();
 
   if (hypoDistKm <= 75 && mag >= 4.8) {
     perceptionTag = {
-      label: 'Sentido Fuerte en tu Zona',
+      label: 'Sentido Fuerte en tu zona',
       level: 'strong',
       variant: 'danger',
       iconName: 'AlertTriangle'
     };
   } else if (hypoDistKm <= 140 && mag >= 4.0) {
     perceptionTag = {
-      label: 'Sentido Moderado en tu Zona',
+      label: 'Sentido Moderado en tu zona',
       level: 'moderate',
       variant: 'warning',
       iconName: 'Zap'
     };
   } else if (hypoDistKm <= 260 && mag >= 4.2) {
     perceptionTag = {
-      label: 'Sentido Leve en tu Zona',
+      label: 'Sentido Leve en tu zona',
       level: 'mild',
       variant: 'info',
       iconName: 'Activity'
     };
-  } else if (felt || intensityClean) {
+  } else if (intensityClean) {
     perceptionTag = {
-      label: intensityClean ? `Sentido (${intensityClean})` : 'Reportado Sentido en Epicentro',
+      label: `Se sintió en: ${intensityClean}`,
+      level: 'reported',
+      variant: 'warning',
+      iconName: 'Activity'
+    };
+  } else if (felt) {
+    perceptionTag = {
+      label: 'Reportado sentido en epicentro',
       level: 'reported',
       variant: 'warning',
       iconName: 'Activity'
     };
   }
 
-  // 4. Depth Classification Tag (Superficial vs Intermedio vs Profundo)
+  // 4. Depth Classification Tag (Natural terms)
   let depthTag = {
     label: `Superficial (${depthKm} km)`,
     level: 'shallow',
     iconName: 'Waves',
     isShallow: true,
-    desc: 'Mayor energía transmitida a superficie'
+    desc: 'Cercano a la superficie (mayor energía en suelo)'
   };
 
   if (depthKm > 300) {
     depthTag = {
-      label: `Profundo (${depthKm} km)`,
+      label: `Muy Profundo (${depthKm} km)`,
       level: 'deep',
       iconName: 'ArrowDownCircle',
       isShallow: false,
-      desc: 'Disipación de ondas en el manto'
+      desc: 'Gran profundidad en el manto'
     };
   } else if (depthKm > 60) {
     depthTag = {
-      label: `Intermedio (${depthKm} km)`,
+      label: `Profundidad Media (${depthKm} km)`,
       level: 'intermediate',
       iconName: 'Layers',
       isShallow: false,
-      desc: 'Placa de Nazca en subducción'
+      desc: 'Profundidad intermedia en la placa de Nazca'
     };
   }
 
-  // 5. Proximity Tag relative to user GPS
-  let proximityTag = {
-    label: `A ${distKm} km`,
-    level: 'far',
-    isNear: false
-  };
-  if (distKm <= 50) {
-    proximityTag = {
-      label: `Muy Cercano (${distKm} km)`,
-      level: 'very_near',
-      isNear: true
-    };
-  } else if (distKm <= 120) {
-    proximityTag = {
-      label: `Cercano (${distKm} km)`,
-      level: 'near',
-      isNear: true
-    };
-  }
+  // 5. Natural Cardinal Direction & Proximity text
+  const directionText = getCardinalDirectionText(bearing);
+  const proximityText = `A ${distKm} km ${directionText} de ti`;
 
-  // 6. Descriptive Intensity & Physical Effects
-  let intensityDesc = intensityClean;
-  if (!intensityDesc) {
-    if (hypoDistKm <= 60 && mag >= 6.0) {
-      intensityDesc = 'Muy Fuerte (Potencial Daño Estructural)';
-    } else if (hypoDistKm <= 80 && mag >= 5.0) {
-      intensityDesc = 'Fuerte (Sacudida Clara en Tu Zona)';
-    } else if (hypoDistKm <= 150 && mag >= 4.5) {
-      intensityDesc = 'Moderado (Objetos Oscilan)';
-    } else if (hypoDistKm <= 250 && mag >= 4.0) {
-      intensityDesc = 'Leve (Percibido en Reposo)';
-    } else {
-      intensityDesc = 'No percibido en tu posición actual';
-    }
+  // 6. Descriptive Intensity & Physical Effects (Clear human language)
+  let intensityDesc = '';
+  if (intensityClean) {
+    intensityDesc = `Reporte oficial: ${intensityClean}`;
+  } else if (hypoDistKm <= 60 && mag >= 6.0) {
+    intensityDesc = 'Peligro de sacudida muy fuerte y daños';
+  } else if (hypoDistKm <= 80 && mag >= 5.0) {
+    intensityDesc = 'Sacudida fuerte perceptible en tu zona';
+  } else if (hypoDistKm <= 150 && mag >= 4.5) {
+    intensityDesc = 'Sacudida moderada (los objetos pueden oscilar)';
+  } else if (hypoDistKm <= 250 && mag >= 4.0) {
+    intensityDesc = 'Sacudida leve (perceptible en reposo)';
+  } else {
+    intensityDesc = 'Sin percepción estimada en tu ubicación';
   }
 
   return {
@@ -512,9 +507,31 @@ export function computeSeismicTelemetry({ mag, depthKm, distKm, intensity, felt,
     hypoDistKm,
     perceptionTag,
     depthTag,
-    proximityTag,
+    proximityText,
     intensityDesc
   };
+}
+
+export function getCardinalDirectionText(bearingCode) {
+  const map = {
+    'N': 'al Norte',
+    'NE': 'al Noreste',
+    'ENE': 'al Este-Noreste',
+    'E': 'al Este',
+    'ESE': 'al Este-Sureste',
+    'SE': 'al Sureste',
+    'SSE': 'al Sur-Sureste',
+    'S': 'al Sur',
+    'SSO': 'al Sur-Suroeste',
+    'SO': 'al Suroeste',
+    'OSO': 'al Oeste-Suroeste',
+    'O': 'al Oeste',
+    'ONO': 'al Oeste-Noroeste',
+    'NO': 'al Noroeste',
+    'NNO': 'al Norte-Noroeste',
+    'NNE': 'al Norte-Noreste'
+  };
+  return map[bearingCode] || (bearingCode ? `en dirección ${bearingCode}` : 'cerca');
 }
 
 function parseIgpEventTimestamp(a) {

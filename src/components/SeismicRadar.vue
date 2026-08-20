@@ -269,14 +269,13 @@
                   </span>
                 </div>
 
-                <!-- Complete Date, Time & Depth Metrics -->
-                <div class="flex items-center gap-3 text-xs text-zinc-300 font-medium flex-wrap pt-0.5">
+                <!-- Date & Time (Clean, non-redundant) -->
+                <div class="flex items-center gap-2.5 text-xs text-zinc-300 font-medium flex-wrap pt-0.5">
                   <span class="flex items-center gap-1.5 text-zinc-200">
                     <Clock class="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span class="text-zinc-400 font-medium">{{ event.timeAgo }}</span>
-                    <span class="text-amber-300 font-mono text-xs font-bold">({{ event.formattedDateTime }})</span>
+                    <span class="text-zinc-300 font-semibold">{{ event.timeAgo }}</span>
+                    <span class="text-zinc-500 font-mono text-[11px]">({{ event.formattedDateTime }})</span>
                   </span>
-                  <span>Profundidad: <strong class="text-zinc-100 font-bold">{{ event.depthKm }} km</strong></span>
                 </div>
               </div>
 
@@ -290,22 +289,22 @@
               @click="focusEventOnMap(event)"
             >
               <Compass class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span class="hidden sm:inline">Ver Epicentro</span>
+              <span class="hidden sm:inline">Ver en Mapa</span>
             </button>
           </div>
 
-          <!-- Bottom Row: Distance from User & Physical Felt Intensity Analysis -->
-          <div class="p-3 rounded-xl bg-black border border-zinc-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <!-- Bottom Row: Natural Proximity from User & Physical Felt Intensity / Report -->
+          <div class="p-3 rounded-xl bg-black/90 border border-zinc-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div class="flex items-center gap-2">
               <Compass class="w-4 h-4 text-emerald-400 shrink-0" />
               <span class="text-zinc-200">
-                A <strong class="text-amber-400 font-bold">{{ event.distanceKm }} km</strong> en dirección <strong class="text-zinc-100 font-bold">{{ event.bearing }}</strong> de tu posición.
+                <strong class="text-amber-400 font-bold">{{ event.proximityText || ('A ' + event.distanceKm + ' km de ti') }}</strong>
               </span>
             </div>
 
-            <div class="flex items-center gap-1.5 text-zinc-300 text-[11px] font-semibold">
-              <span class="text-zinc-400">Intensidad:</span>
-              <span class="text-zinc-100">{{ event.intensityDesc }}</span>
+            <div v-if="event.intensityDesc" class="flex items-center gap-1.5 text-zinc-300 text-[11px] font-medium">
+              <Activity class="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+              <span class="text-zinc-300">{{ event.intensityDesc }}</span>
             </div>
           </div>
 

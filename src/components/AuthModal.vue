@@ -56,12 +56,14 @@
 <script setup>
 import { ref } from 'vue';
 import { useAuthStore } from '../stores/authStore';
+import { useMeshStore } from '../stores/meshStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import AppInput from './ui/AppInput.vue';
 import AppButton from './ui/AppButton.vue';
 import { ShieldAlert, User, ArrowRight, WifiOff } from 'lucide-vue-next';
 
 const authStore = useAuthStore();
+const meshStore = useMeshStore();
 const notificationStore = useNotificationStore();
 const inputName = ref('');
 
@@ -70,6 +72,8 @@ const handleSubmit = async () => {
     authStore.loginWithName(inputName.value);
     // Request native notifications immediately upon entering
     notificationStore.requestPermission();
+    // Initialize P2P mesh network, BroadcastChannel and WebRTC
+    await meshStore.initMesh(authStore.user);
     // Capture user's real GPS position immediately
     await authStore.captureInitialLocation();
   }

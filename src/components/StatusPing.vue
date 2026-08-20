@@ -323,10 +323,29 @@ const peruvianRegions = [
 ];
 
 const peerPingHistory = computed(() => {
-  return (meshStore.pingHistory || []).filter(entry => entry.userId !== authStore.userId);
+  const history = (meshStore.pingHistory || []).filter(entry => entry.userId !== authStore.userId);
+  const otherUsers = (meshStore.users || []).filter(u => u.id !== authStore.userId);
+  
+  const combined = [...history];
+  for (const user of otherUsers) {
+    const hasEntry = combined.some(h => h.userId === user.id);
+    if (!hasEntry) {
+      combined.push({
+        id: `user-status-${user.id}`,
+        userId: user.id,
+        userName: user.name,
+        status: user.status || 'A salvo',
+        coords: user.coords,
+        timestamp: user.updatedAt || new Date().toISOString()
+      });
+    }
+  }
+  
+  return combined.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
 });
 
-onMounted(() => {
+onMounted(async () => {
+  await meshStore.reloadFromDB();
   if (authStore.userCoords) {
     currentCoords.value = authStore.userCoords;
     gpsLocationText.value = `GPS: ${authStore.userCoords.lat.toFixed(2)}, ${authStore.userCoords.lng.toFixed(2)}`;

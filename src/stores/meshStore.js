@@ -765,11 +765,25 @@ export const useMeshStore = defineStore('mesh', {
           await this.registerOrUpdatePeerUser(sender);
           this.connectToPeer(sender.id, authStore.user);
 
+          const historyEntry = {
+            id: `ping-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            userId: sender.id,
+            userName: sender.name,
+            status: sender.status || 'A salvo',
+            coords: sender.coords,
+            timestamp: sender.updatedAt || new Date().toISOString()
+          };
+          const exists = this.pingHistory.some(h => h.userId === sender.id && h.timestamp === historyEntry.timestamp);
+          if (!exists) {
+            this.pingHistory.unshift(historyEntry);
+            await saveDBItem('status_history', historyEntry);
+          }
+
           if (authStore.user) {
             const replyPayload = {
               type: 'STATUS_UPDATE',
               payload: authStore.user,
-              isPing: false
+              isPing: true
             };
 
             this.broadcastGossipLocally(replyPayload);
@@ -814,53 +828,58 @@ export const useMeshStore = defineStore('mesh', {
         const peer = data.payload;
 
         if (peer && peer.id !== currentUserId) {
-          const existingUser = this.users.find(u => u.id === peer.id);
-          const hasStatusChanged = existingUser && existingUser.status !== peer.status;
-          const isExplicitPing = Boolean(data.isPing);
-
           await this.registerOrUpdatePeerUser(peer);
 
-          if (hasStatusChanged || isExplicitPing) {
-            const historyEntry = {
-              id: `ping-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-              userId: peer.id,
-              userName: peer.name,
-              status: peer.status,
-              coords: peer.coords,
-              timestamp: peer.updatedAt || new Date().toISOString()
-            };
+          const historyEntry = {
+            id: `ping-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            userId: peer.id,
+            userName: peer.name,
+            status: peer.status || 'A salvo',
+            coords: peer.coords,
+            timestamp: peer.updatedAt || new Date().toISOString()
+          };
 
-            const exists = this.pingHistory.some(h => h.userId === peer.id && h.timestamp === historyEntry.timestamp);
-            if (!exists) {
-              this.pingHistory.unshift(historyEntry);
-              await saveDBItem('status_history', historyEntry);
-            }
-
-            this.pushNotification({
-              type: 'status',
-              status: peer.status,
-              title: `Estado: ${peer.name}`,
-              message: `Reporta: "${peer.status}"`
-            });
-
-            this.peerConnections.forEach(conn => {
-              if (conn && conn.open && conn.peer !== peer.id) {
-                try {
-                  conn.send({
-                    type: 'STATUS_UPDATE',
-                    payload: peer,
-                    isPing: false
-                  });
-                } catch (e) {}
-              }
-            });
+          const exists = this.pingHistory.some(h => h.userId === peer.id && h.timestamp === historyEntry.timestamp);
+          if (!exists) {
+            this.pingHistory.unshift(historyEntry);
+            await saveDBItem('status_history', historyEntry);
           }
+
+          this.pushNotification({
+            type: 'status',
+            status: peer.status || 'A salvo',
+            title: `Estado: ${peer.name}`,
+            message: `Reporta: "${peer.status || 'A salvo'}"`
+          });
+
+          this.peerConnections.forEach(conn => {
+            if (conn && conn.open && conn.peer !== peer.id) {
+              try {
+                conn.send({
+                  type: 'STATUS_UPDATE',
+                  payload: peer,
+                  isPing: false
+                });
+              } catch (e) {}
+            }
+          });
         }
         return;
       }
 
       if (data.type === 'GOSSIP_BROADCAST') {
         const msg = data.payload;
+        if (!msg || !msg.id) return;
+
+        // Auto-register sender as active user in contacts if missing
+        if (msg.senderId && msg.senderId !== currentUserId) {
+          this.registerOrUpdatePeerUser({
+            id: msg.senderId,
+            name: msg.senderName,
+            coords: msg.coords,
+            updatedAt: msg.timestamp
+          });
+        }
 
         const exists = this.broadcasts.some(b => b.id === msg.id);
         if (!exists) {
