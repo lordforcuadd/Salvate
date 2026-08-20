@@ -76,7 +76,7 @@
           :key="tab.id"
           type="button"
           :class="[
-            'px-4 py-2.5 rounded-2xl font-black text-xs flex flex-row items-center gap-2 whitespace-nowrap transition-all touch-btn shrink-0 cursor-pointer',
+            'px-4 py-2.5 rounded-2xl font-black text-xs flex flex-row items-center gap-2 whitespace-nowrap transition-all touch-btn shrink-0 cursor-pointer relative',
             activeTab === tab.id
               ? tab.activeClass
               : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 border border-zinc-800'
@@ -85,6 +85,13 @@
         >
           <component :is="tab.icon" class="w-4 h-4 shrink-0" />
           <span>{{ tab.label }}</span>
+          <!-- Red Notification Badge Bubble -->
+          <span 
+            v-if="getTabBadge(tab.id) > 0" 
+            class="px-1.5 py-0.5 text-[10px] font-black bg-rose-600 text-white rounded-full leading-none animate-pulse border border-black shadow-sm"
+          >
+            {{ getTabBadge(tab.id) }}
+          </span>
         </button>
       </div>
 
@@ -170,25 +177,41 @@
         :key="tab.id"
         type="button"
         :class="[
-          'flex flex-col items-center justify-center p-2 rounded-2xl transition-all cursor-pointer active:scale-95 min-w-[58px]',
+          'flex flex-col items-center justify-center p-2 rounded-2xl transition-all cursor-pointer active:scale-95 min-w-[58px] relative',
           activeTab === tab.id ? 'text-emerald-400 font-black scale-105' : 'text-zinc-400 font-semibold'
         ]"
         @click="activeTab = tab.id"
       >
-        <component :is="tab.icon" class="w-5 h-5" />
+        <div class="relative">
+          <component :is="tab.icon" class="w-5 h-5" />
+          <span 
+            v-if="getTabBadge(tab.id) > 0" 
+            class="absolute -top-1.5 -right-2.5 px-1 min-w-[16px] h-[16px] text-[9px] font-black bg-rose-600 text-white rounded-full flex items-center justify-center border border-black animate-pulse"
+          >
+            {{ getTabBadge(tab.id) }}
+          </span>
+        </div>
         <span class="text-[10px] mt-1">{{ tab.shortLabel }}</span>
       </button>
 
-      <!-- "Más" Menu Sheet Launcher -->
+      <!-- "Más" Menu Sheet Launcher with Unread Indicator -->
       <button 
         type="button"
         :class="[
-          'flex flex-col items-center justify-center p-2 rounded-2xl transition-all cursor-pointer active:scale-95 min-w-[58px]',
+          'flex flex-col items-center justify-center p-2 rounded-2xl transition-all cursor-pointer active:scale-95 min-w-[58px] relative',
           isMoreMenuOpen ? 'text-emerald-400 font-black' : 'text-zinc-400 font-semibold'
         ]"
         @click="isMoreMenuOpen = true"
       >
-        <Menu class="w-5 h-5" />
+        <div class="relative">
+          <Menu class="w-5 h-5" />
+          <span 
+            v-if="notificationStore.unreadHazards > 0" 
+            class="absolute -top-1.5 -right-2.5 px-1 min-w-[16px] h-[16px] text-[9px] font-black bg-rose-600 text-white rounded-full flex items-center justify-center border border-black animate-pulse"
+          >
+            {{ notificationStore.unreadHazards }}
+          </span>
+        </div>
         <span class="text-[10px] mt-1">Más</span>
       </button>
     </nav>
@@ -218,8 +241,16 @@
             </div>
           </div>
 
-          <div class="w-8 h-8 rounded-xl bg-zinc-800/80 flex items-center justify-center shrink-0 text-zinc-400">
-            <ChevronRight class="w-4 h-4 text-zinc-300" />
+          <div class="flex items-center gap-2">
+            <span 
+              v-if="getTabBadge(item.id) > 0" 
+              class="px-2 py-0.5 rounded-full bg-rose-600 text-white font-black text-[10px] animate-pulse"
+            >
+              {{ getTabBadge(item.id) }} nuevo(s)
+            </span>
+            <div class="w-8 h-8 rounded-xl bg-zinc-800/80 flex items-center justify-center shrink-0 text-zinc-400">
+              <ChevronRight class="w-4 h-4 text-zinc-300" />
+            </div>
           </div>
         </button>
       </div>
@@ -237,6 +268,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useAuthStore } from './stores/authStore';
 import { useMeshStore } from './stores/meshStore';
+import { useNotificationStore } from './stores/notificationStore';
 
 import Navbar from './components/Navbar.vue';
 import AuthModal from './components/AuthModal.vue';
@@ -269,9 +301,17 @@ import {
 
 const authStore = useAuthStore();
 const meshStore = useMeshStore();
+const notificationStore = useNotificationStore();
 
 const activeTab = ref('dashboard');
 const isMoreMenuOpen = ref(false);
+
+const getTabBadge = (tabId) => {
+  if (tabId === 'broadcast') return notificationStore.unreadBroadcasts;
+  if (tabId === 'seismic') return notificationStore.unreadSeismic;
+  if (tabId === 'hazards') return notificationStore.unreadHazards;
+  return 0;
+};
 
 const allTabs = [
   { id: 'dashboard', label: 'Inicio', shortLabel: 'Inicio', icon: LayoutDashboard, activeClass: 'bg-emerald-500 text-zinc-950 shadow-md shadow-emerald-500/20' },
@@ -324,10 +364,12 @@ const mobileMoreTabs = [
 
 const openTab = (tabId) => {
   activeTab.value = tabId;
+  notificationStore.clearUnread(tabId);
 };
 
 const selectMoreTab = (tabId) => {
   activeTab.value = tabId;
+  notificationStore.clearUnread(tabId);
   isMoreMenuOpen.value = false;
 };
 
@@ -337,10 +379,17 @@ const getStatusBadgeVariant = (status) => {
   return 'danger';
 };
 
+watch(activeTab, (newTab) => {
+  notificationStore.clearUnread(newTab);
+});
+
 onMounted(() => {
   authStore.initAuth();
   if (authStore.isAuthenticated) {
     meshStore.initMesh(authStore.user);
+  }
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    notificationStore.permission = 'granted';
   }
 });
 

@@ -38,6 +38,27 @@
           <span class="truncate">{{ authStore.isOnline ? 'Online' : 'Sin Internet' }}</span>
         </div>
 
+        <!-- Mobile Native Notification Bell / Toggle -->
+        <button
+          type="button"
+          :class="[
+            'h-8 sm:h-9 px-2 sm:px-2.5 rounded-xl border flex items-center justify-center gap-1.5 transition-all shrink-0 cursor-pointer active:scale-95 relative',
+            notificationStore.hasPermission
+              ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-emerald-400'
+              : 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25'
+          ]"
+          :title="notificationStore.hasPermission ? 'Alertas en el celular activadas' : 'Toca para activar alertas y notificaciones en tu celular'"
+          @click="toggleOrRequestNotifications"
+        >
+          <component :is="notificationStore.hasPermission ? Bell : BellRing" class="w-4 h-4 shrink-0" />
+          <span 
+            v-if="notificationStore.hasUnread" 
+            class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white font-black text-[10px] flex items-center justify-center border-2 border-black animate-pulse"
+          >
+            {{ notificationStore.totalUnreadCount }}
+          </span>
+        </button>
+
         <!-- Help Guide Button (Emerald Green Primary) -->
         <button
           type="button"
@@ -160,16 +181,42 @@
 import { ref } from 'vue';
 import { useAuthStore } from '../stores/authStore';
 import { useDialogStore } from '../stores/dialogStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import AppBadge from './ui/AppBadge.vue';
 import AppButton from './ui/AppButton.vue';
 import AppModal from './ui/AppModal.vue';
-import { ShieldAlert, User, HelpCircle, RotateCcw, Wifi, WifiOff } from 'lucide-vue-next';
+import { ShieldAlert, User, HelpCircle, RotateCcw, Wifi, WifiOff, Bell, BellRing } from 'lucide-vue-next';
 
 defineEmits(['open-profile']);
 const authStore = useAuthStore();
 const dialogStore = useDialogStore();
+const notificationStore = useNotificationStore();
 
 const showHelpModal = ref(false);
+
+const toggleOrRequestNotifications = async () => {
+  if (!notificationStore.hasPermission) {
+    const result = await notificationStore.requestPermission();
+    if (result === 'granted') {
+      dialogStore.alert({
+        title: '¡Alertas Activadas!',
+        message: 'Recibirás avisos sonoros y notificaciones nativas en tu celular ante sismos, notas de voz y alertas comunitarias.',
+        confirmText: 'Entendido',
+        variant: 'info'
+      });
+    } else {
+      dialogStore.alert({
+        title: 'Permiso Requerido',
+        message: 'Para recibir alertas cuando la pantalla esté bloqueada, habilita los permisos de notificaciones en los ajustes de tu navegador.',
+        confirmText: 'Entendido',
+        variant: 'warning'
+      });
+    }
+  } else {
+    notificationStore.soundEnabled = !notificationStore.soundEnabled;
+    notificationStore.vibrationEnabled = notificationStore.soundEnabled;
+  }
+};
 
 const confirmResetApp = () => {
   dialogStore.confirm({

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { useNotificationStore } from './notificationStore';
 
 export const useSeismicStore = defineStore('seismic', {
   state: () => ({
@@ -283,6 +284,23 @@ export const useSeismicStore = defineStore('seismic', {
       this.allEvents = allSorted;
       this.lastUpdated = new Date().toISOString();
       this.isLoading = false;
+
+      // Detectar sismos frescos recientes (< 30 min) para notificación del celular y burbuja roja
+      if (peruOnly.length > 0) {
+        const newest = peruOnly[0];
+        const eventAgeMs = Date.now() - new Date(newest.time).getTime();
+        if (eventAgeMs >= 0 && eventAgeMs < 1800000 && (newest.magnitude >= 3.5 || newest.felt)) {
+          const notifStore = useNotificationStore();
+          const feltSuffix = newest.felt ? ' • ⚡ Sentido' : '';
+          notifStore.notify({
+            type: 'seismic',
+            title: `Alerta Sísmica M${newest.magnitude.toFixed(1)}${feltSuffix}`,
+            body: `${newest.placeTitle} (Prof: ${newest.depthKm} km)`,
+            id: newest.id,
+            tabToOpen: 'seismic'
+          });
+        }
+      }
     }
   }
 });

@@ -3,6 +3,7 @@ import { Peer } from 'peerjs';
 import { saveDBItem, getAllDBItems, deleteDBItem } from '../services/db';
 import { useAuthStore } from './authStore';
 import { useHazardStore } from './hazardStore';
+import { useNotificationStore } from './notificationStore';
 
 // Ultra-compact SDP Minifier (reduces 1500+ byte WebRTC SDP down to ~150 bytes for ultra-fast QR scanning)
 function minifySDP(sdp, uid, name, type) {
@@ -875,6 +876,14 @@ export const useMeshStore = defineStore('mesh', {
               title: `Mensaje de ${msg.senderName}`,
               message: msg.type === 'audio' ? 'Nota de voz recibida' : `"${msg.content}"`
             });
+            const notifStore = useNotificationStore();
+            notifStore.notify({
+              type: 'broadcast',
+              title: `Mensaje de ${msg.senderName}`,
+              body: msg.type === 'audio' ? 'Nota de voz de emergencia recibida' : (msg.content || 'Nuevo mensaje comunitario'),
+              id: msg.id,
+              tabToOpen: 'broadcast'
+            });
           }
 
           this.broadcastGossipLocally({
@@ -915,6 +924,14 @@ export const useMeshStore = defineStore('mesh', {
               status: hazard.severity === 'alta' ? 'Requiere ayuda' : 'En traslado',
               title: `Alerta: ${hazard.title || 'Peligro Reportado'}`,
               message: `${hazard.description || 'Peligro en la zona'} (${hazard.authorName || 'Comunidad'})`
+            });
+            const notifStore = useNotificationStore();
+            notifStore.notify({
+              type: 'hazard',
+              title: `Alerta de Peligro: ${hazard.title || 'Reporte de Zona'}`,
+              body: `${hazard.description || 'Peligro reportado'} (${hazard.authorName || 'Comunidad'})`,
+              id: hazard.id,
+              tabToOpen: 'hazards'
             });
           }
 
