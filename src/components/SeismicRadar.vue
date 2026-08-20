@@ -189,16 +189,16 @@
           Reportes Sísmicos Oficiales Detallados
         </h4>
 
-        <!-- IGP Color Legend -->
+        <!-- Color Legend (Temblor vs Sismo vs Terremoto) -->
         <div class="flex items-center gap-3 text-[11px] font-bold text-zinc-300">
-          <span class="flex items-center gap-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> M&lt;4.5 Leve
+          <span class="flex items-center gap-1 text-emerald-400">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> M&lt;4.5 Temblor Leve
           </span>
-          <span class="flex items-center gap-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> M4.5-5.9 Moderado
+          <span class="flex items-center gap-1 text-amber-400">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> M4.5-5.9 Sismo Moderado
           </span>
-          <span class="flex items-center gap-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> M&ge;6.0 Fuerte
+          <span class="flex items-center gap-1 text-rose-400">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> M&ge;6.0 Terremoto
           </span>
         </div>
       </div>
@@ -225,8 +225,16 @@
               </div>
 
               <div class="space-y-1 min-w-0 flex-1">
-                <!-- Title & Region Badges -->
+                <!-- Title & Region Badges + Classification + Reactive Telemetry -->
                 <div class="flex items-center gap-2 flex-wrap">
+                  <!-- Technical Classification (Terremoto / Sismo / Temblor) -->
+                  <span 
+                    v-if="event.classification" 
+                    :class="['px-2 py-0.5 rounded-lg text-[10px] uppercase border shrink-0', event.classification.badgeClass]"
+                  >
+                    {{ event.classification.label }}
+                  </span>
+
                   <h5 class="text-xs sm:text-sm font-bold text-zinc-100 leading-snug truncate">{{ event.placeTitle }}</h5>
                   
                   <AppBadge variant="warning" size="xs">
@@ -237,9 +245,24 @@
                     {{ event.source }}
                   </AppBadge>
 
-                  <AppBadge v-if="event.felt" variant="danger" size="xs">
-                    ⚡ Sentido
-                  </AppBadge>
+                  <!-- Reactive Perception Tag (No Emojis - Lucide Icons) -->
+                  <span 
+                    v-if="event.perceptionTag" 
+                    :class="['px-2 py-0.5 rounded-lg text-[10px] font-bold border flex items-center gap-1 shrink-0', getPerceptionTagClass(event.perceptionTag.variant)]"
+                  >
+                    <component :is="getPerceptionIcon(event.perceptionTag.iconName)" class="w-3.5 h-3.5 shrink-0" />
+                    <span>{{ event.perceptionTag.label }}</span>
+                  </span>
+
+                  <!-- Reactive Depth Tag -->
+                  <span 
+                    v-if="event.depthTag" 
+                    class="px-2 py-0.5 rounded-lg text-[10px] font-medium bg-zinc-950 border border-zinc-800 text-zinc-300 flex items-center gap-1 shrink-0"
+                    :title="event.depthTag.desc"
+                  >
+                    <component :is="getDepthIcon(event.depthTag.iconName)" class="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>{{ event.depthTag.label }}</span>
+                  </span>
 
                   <span v-if="event.reportCode" class="text-[10px] font-mono text-zinc-400 font-bold px-1.5 py-0.5 rounded bg-zinc-950 border border-zinc-800">
                     {{ event.reportCode }}
@@ -299,7 +322,20 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useSeismicStore } from '../stores/seismicStore';
 import { useAuthStore } from '../stores/authStore';
 import AppBadge from './ui/AppBadge.vue';
-import { Activity, Clock, Compass, RefreshCw, Target, Calendar, MapPin } from 'lucide-vue-next';
+import { 
+  Activity, 
+  Clock, 
+  Compass, 
+  RefreshCw, 
+  Target, 
+  Calendar, 
+  MapPin,
+  AlertTriangle,
+  Zap,
+  Waves,
+  Layers,
+  ArrowDownCircle
+} from 'lucide-vue-next';
 import L from 'leaflet';
 
 const seismicStore = useSeismicStore();
@@ -310,6 +346,24 @@ const isLocating = ref(false);
 let map = null;
 let markersGroup = null;
 let userMarker = null;
+
+const getPerceptionIcon = (iconName) => {
+  if (iconName === 'AlertTriangle') return AlertTriangle;
+  if (iconName === 'Zap') return Zap;
+  return Activity;
+};
+
+const getDepthIcon = (iconName) => {
+  if (iconName === 'ArrowDownCircle') return ArrowDownCircle;
+  if (iconName === 'Layers') return Layers;
+  return Waves;
+};
+
+const getPerceptionTagClass = (variant) => {
+  if (variant === 'danger') return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+  if (variant === 'warning') return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+  return 'bg-teal-500/15 text-teal-300 border-teal-500/30';
+};
 
 const displayedEvents = computed(() => {
   const list = filterMode.value === 'peru' ? seismicStore.peruEvents : seismicStore.allEvents;

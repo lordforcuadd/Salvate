@@ -47,11 +47,26 @@ export const useSeismicStore = defineStore('seismic', {
       const recalculate = (evt) => {
         const distKm = Math.round(calculateHaversineDistance(userCoords.lat, userCoords.lng, evt.lat, evt.lng));
         const bearing = calculateBearing(userCoords.lat, userCoords.lng, evt.lat, evt.lng);
+        const telemetry = computeSeismicTelemetry({
+          mag: evt.magnitude,
+          depthKm: evt.depthKm,
+          distKm,
+          intensity: evt.intensity,
+          felt: evt.felt,
+          source: evt.source,
+          isPeru: evt.isPeru
+        });
+
         return {
           ...evt,
           distanceKm: distKm,
           bearing,
-          intensityDesc: evt.intensity || getIntensityDescription(evt.magnitude, distKm)
+          classification: telemetry.classification,
+          hypoDistKm: telemetry.hypoDistKm,
+          perceptionTag: telemetry.perceptionTag,
+          depthTag: telemetry.depthTag,
+          proximityTag: telemetry.proximityTag,
+          intensityDesc: telemetry.intensityDesc
         };
       };
 
@@ -80,7 +95,7 @@ export const useSeismicStore = defineStore('seismic', {
       const officialIgpUrl = `https://ide.igp.gob.pe/arcgis/rest/services/monitoreocensis/Sismicidad/MapServer/0${igpQueryPath}`;
       
       const igpUrlsToTry = [
-        `/api/igp${igpQueryPath}`, // Vite Proxy (CORS-free en dev / local)
+        `/api/igp${igpQueryPath}`, // Vite Proxy / Hosting rewrite (CORS-free)
         officialIgpUrl, // Directo
         `https://api.allorigins.win/raw?url=${encodeURIComponent(officialIgpUrl)}` // Fallback CORS mirror
       ];
@@ -105,6 +120,18 @@ export const useSeismicStore = defineStore('seismic', {
                 const distKm = Math.round(calculateHaversineDistance(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng));
                 const bearing = calculateBearing(defaultUserCoords.lat, defaultUserCoords.lng, lat, lng);
                 const regionBadge = getIgpRegionBadge(a.departamento, a.ref);
+                const felt = a.sentido === '1' || Boolean(a.int_);
+                const intensity = (a.int_ || '').trim();
+
+                const telemetry = computeSeismicTelemetry({
+                  mag,
+                  depthKm,
+                  distKm,
+                  intensity,
+                  felt,
+                  source: 'IGP / CENSIS',
+                  isPeru: true
+                });
 
                 return {
                   id: `igp-${a.objectid || a.code || Math.random().toString(36).substr(2, 5)}`,
@@ -122,10 +149,15 @@ export const useSeismicStore = defineStore('seismic', {
                   distanceKm: distKm,
                   bearing,
                   isPeru: true,
-                  intensity: a.int_ || '',
-                  felt: a.sentido === '1' || Boolean(a.int_),
+                  intensity,
+                  felt,
                   reportCode: a.code || (a.reporte ? `Reporte N° ${a.reporte}` : ''),
-                  intensityDesc: a.int_ ? a.int_ : getIntensityDescription(mag, distKm)
+                  classification: telemetry.classification,
+                  hypoDistKm: telemetry.hypoDistKm,
+                  perceptionTag: telemetry.perceptionTag,
+                  depthTag: telemetry.depthTag,
+                  proximityTag: telemetry.proximityTag,
+                  intensityDesc: telemetry.intensityDesc
                 };
               });
               this.activeSource = 'IGP / CENSIS (En Vivo)';
@@ -159,6 +191,16 @@ export const useSeismicStore = defineStore('seismic', {
             const { translatedPlace, regionBadge } = formatPeruPlaceTitle(props.flynn_region || props.place, lat, lng, isPeru);
             const realTimeMs = new Date(props.time).getTime();
 
+            const telemetry = computeSeismicTelemetry({
+              mag,
+              depthKm,
+              distKm,
+              intensity: '',
+              felt: false,
+              source: 'EMSC',
+              isPeru
+            });
+
             return {
               id: `emsc-${props.unid || feat.id}`,
               source: props.auth === 'IGP' ? 'IGP / CENSIS (vía EMSC)' : 'Red Sismológica EMSC',
@@ -177,7 +219,12 @@ export const useSeismicStore = defineStore('seismic', {
               isPeru,
               intensity: '',
               felt: false,
-              intensityDesc: getIntensityDescription(mag, distKm)
+              classification: telemetry.classification,
+              hypoDistKm: telemetry.hypoDistKm,
+              perceptionTag: telemetry.perceptionTag,
+              depthTag: telemetry.depthTag,
+              proximityTag: telemetry.proximityTag,
+              intensityDesc: telemetry.intensityDesc
             };
           });
         }
@@ -211,6 +258,16 @@ export const useSeismicStore = defineStore('seismic', {
             const { translatedPlace, regionBadge } = formatPeruPlaceTitle(props.place, lat, lng, isPeru);
             const realTimeMs = new Date(props.time).getTime();
 
+            const telemetry = computeSeismicTelemetry({
+              mag,
+              depthKm,
+              distKm,
+              intensity: '',
+              felt: false,
+              source: 'USGS',
+              isPeru
+            });
+
             return {
               id: `usgs-${feat.id}`,
               source: isPeru ? 'Monitoreo Sísmico Perú' : 'USGS Global',
@@ -229,7 +286,12 @@ export const useSeismicStore = defineStore('seismic', {
               isPeru,
               intensity: '',
               felt: false,
-              intensityDesc: getIntensityDescription(mag, distKm)
+              classification: telemetry.classification,
+              hypoDistKm: telemetry.hypoDistKm,
+              perceptionTag: telemetry.perceptionTag,
+              depthTag: telemetry.depthTag,
+              proximityTag: telemetry.proximityTag,
+              intensityDesc: telemetry.intensityDesc
             };
           });
         }
@@ -291,10 +353,10 @@ export const useSeismicStore = defineStore('seismic', {
         const eventAgeMs = Date.now() - new Date(newest.time).getTime();
         if (eventAgeMs >= 0 && eventAgeMs < 1800000 && (newest.magnitude >= 3.5 || newest.felt)) {
           const notifStore = useNotificationStore();
-          const feltSuffix = newest.felt ? ' • ⚡ Sentido' : '';
+          const classLabel = newest.classification?.label || 'SISMO';
           notifStore.notify({
             type: 'seismic',
-            title: `Alerta Sísmica M${newest.magnitude.toFixed(1)}${feltSuffix}`,
+            title: `Alerta: ${classLabel} M${newest.magnitude.toFixed(1)}`,
             body: `${newest.placeTitle} (Prof: ${newest.depthKm} km)`,
             id: newest.id,
             tabToOpen: 'seismic'
@@ -304,6 +366,156 @@ export const useSeismicStore = defineStore('seismic', {
     }
   }
 });
+
+export function computeSeismicTelemetry({ mag, depthKm, distKm, intensity, felt, source, isPeru }) {
+  // 1. Technical Classification (Sismo vs Terremoto vs Temblor)
+  let classification = {
+    label: 'TEMBLOR LEVE',
+    shortLabel: 'Temblor',
+    type: 'minor',
+    badgeClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-black',
+    isEarthquake: false,
+    severityLevel: 1
+  };
+
+  if (mag >= 7.0) {
+    classification = {
+      label: 'TERREMOTO MAYOR',
+      shortLabel: 'Terremoto Mayor',
+      type: 'catastrophic',
+      badgeClass: 'bg-rose-600/30 text-rose-300 border-rose-500/60 font-black animate-pulse',
+      isEarthquake: true,
+      severityLevel: 4
+    };
+  } else if (mag >= 6.0) {
+    classification = {
+      label: 'TERREMOTO',
+      shortLabel: 'Terremoto',
+      type: 'earthquake',
+      badgeClass: 'bg-rose-500/20 text-rose-400 border-rose-500/40 font-black',
+      isEarthquake: true,
+      severityLevel: 3
+    };
+  } else if (mag >= 4.5) {
+    classification = {
+      label: 'SISMO MODERADO',
+      shortLabel: 'Sismo',
+      type: 'moderate',
+      badgeClass: 'bg-amber-500/20 text-amber-400 border-amber-500/30 font-bold',
+      isEarthquake: false,
+      severityLevel: 2
+    };
+  }
+
+  // 2. Hypocentral distance (3D Euclidean distance considering focal depth)
+  const hypoDistKm = Math.round(Math.sqrt((distKm * distKm) + (depthKm * depthKm)));
+
+  // 3. Perception / Felt Analysis (Pure reactive calculation combining 3D distance, magnitude and local intensity)
+  let perceptionTag = null;
+  const intensityClean = (intensity || '').trim();
+
+  if (hypoDistKm <= 75 && mag >= 4.8) {
+    perceptionTag = {
+      label: 'Sentido Fuerte en tu Zona',
+      level: 'strong',
+      variant: 'danger',
+      iconName: 'AlertTriangle'
+    };
+  } else if (hypoDistKm <= 140 && mag >= 4.0) {
+    perceptionTag = {
+      label: 'Sentido Moderado en tu Zona',
+      level: 'moderate',
+      variant: 'warning',
+      iconName: 'Zap'
+    };
+  } else if (hypoDistKm <= 260 && mag >= 4.2) {
+    perceptionTag = {
+      label: 'Sentido Leve en tu Zona',
+      level: 'mild',
+      variant: 'info',
+      iconName: 'Activity'
+    };
+  } else if (felt || intensityClean) {
+    perceptionTag = {
+      label: intensityClean ? `Sentido (${intensityClean})` : 'Reportado Sentido en Epicentro',
+      level: 'reported',
+      variant: 'warning',
+      iconName: 'Activity'
+    };
+  }
+
+  // 4. Depth Classification Tag (Superficial vs Intermedio vs Profundo)
+  let depthTag = {
+    label: `Superficial (${depthKm} km)`,
+    level: 'shallow',
+    iconName: 'Waves',
+    isShallow: true,
+    desc: 'Mayor energía transmitida a superficie'
+  };
+
+  if (depthKm > 300) {
+    depthTag = {
+      label: `Profundo (${depthKm} km)`,
+      level: 'deep',
+      iconName: 'ArrowDownCircle',
+      isShallow: false,
+      desc: 'Disipación de ondas en el manto'
+    };
+  } else if (depthKm > 60) {
+    depthTag = {
+      label: `Intermedio (${depthKm} km)`,
+      level: 'intermediate',
+      iconName: 'Layers',
+      isShallow: false,
+      desc: 'Placa de Nazca en subducción'
+    };
+  }
+
+  // 5. Proximity Tag relative to user GPS
+  let proximityTag = {
+    label: `A ${distKm} km`,
+    level: 'far',
+    isNear: false
+  };
+  if (distKm <= 50) {
+    proximityTag = {
+      label: `Muy Cercano (${distKm} km)`,
+      level: 'very_near',
+      isNear: true
+    };
+  } else if (distKm <= 120) {
+    proximityTag = {
+      label: `Cercano (${distKm} km)`,
+      level: 'near',
+      isNear: true
+    };
+  }
+
+  // 6. Descriptive Intensity & Physical Effects
+  let intensityDesc = intensityClean;
+  if (!intensityDesc) {
+    if (hypoDistKm <= 60 && mag >= 6.0) {
+      intensityDesc = 'Muy Fuerte (Potencial Daño Estructural)';
+    } else if (hypoDistKm <= 80 && mag >= 5.0) {
+      intensityDesc = 'Fuerte (Sacudida Clara en Tu Zona)';
+    } else if (hypoDistKm <= 150 && mag >= 4.5) {
+      intensityDesc = 'Moderado (Objetos Oscilan)';
+    } else if (hypoDistKm <= 250 && mag >= 4.0) {
+      intensityDesc = 'Leve (Percibido en Reposo)';
+    } else {
+      intensityDesc = 'No percibido en tu posición actual';
+    }
+  }
+
+  return {
+    classification,
+    hypoDistKm,
+    perceptionTag,
+    depthTag,
+    proximityTag,
+    intensityDesc
+  };
+}
 
 function parseIgpEventTimestamp(a) {
   if (a.hora && a.fecha) {
@@ -448,12 +660,4 @@ function formatTimeAgo(isoOrEpoch) {
   } catch (e) {
     return '';
   }
-}
-
-function getIntensityDescription(mag, distKm) {
-  if (mag >= 7.0 && distKm < 150) return 'Muy Fuerte (Potencial Destructivo)';
-  if (mag >= 6.0 && distKm < 100) return 'Fuerte (Sacudida Severa)';
-  if (mag >= 5.0 && distKm < 80) return 'Moderado (Claramente Sentido)';
-  if (distKm < 50) return 'Sentido Leve en Epicentro';
-  return 'No percibido en tu zona';
 }
