@@ -458,7 +458,7 @@ export const useMeshStore = defineStore('mesh', {
             conn.send({
               type: 'STATUS_UPDATE',
               payload: currentUser,
-              isPing: true
+              isPing: false
             });
             conn.send({
               type: 'REQUEST_STATUS'
@@ -706,13 +706,6 @@ export const useMeshStore = defineStore('mesh', {
             updatedAt: new Date().toISOString()
           });
         }
-
-        this.pushNotification({
-          type: 'status',
-          status: 'A salvo',
-          title: 'Enlace Offline Establecido',
-          message: `Conexión directa P2P vinculada sin internet.`
-        });
       };
 
       channel.onopen = handleOpen;
@@ -1092,15 +1085,6 @@ export const useMeshStore = defineStore('mesh', {
               if (conn && conn.open) {
                 try { conn.send(replyPayload); } catch (e) {}
               }
-            });
-          }
-
-          if (isBrandNew) {
-            this.pushNotification({
-              type: 'status',
-              status: sender.status || 'A salvo',
-              title: 'Contacto Vinculado',
-              message: `${sender.name} se ha vinculado a tu red de emergencia.`
             });
           }
         }
