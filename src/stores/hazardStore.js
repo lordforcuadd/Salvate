@@ -66,14 +66,6 @@ export const useHazardStore = defineStore('hazard', {
         }
       });
 
-      // Trigger notification toast (Emoji-free)
-      meshStore.pushNotification({
-        type: 'hazard',
-        status: newReport.severity === 'alta' ? 'Requiere ayuda' : 'En traslado',
-        title: 'Nueva Alerta de Peligro',
-        message: `${newReport.title} - ${newReport.authorName}`
-      });
-
       return newReport;
     },
 

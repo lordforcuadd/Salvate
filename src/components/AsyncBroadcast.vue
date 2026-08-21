@@ -659,9 +659,16 @@ const togglePlayAudio = (msgId, url) => {
 const startRecording = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 8000 }
-      : {};
+    let options = {};
+    if (typeof MediaRecorder !== 'undefined') {
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        options = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 16000 };
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        options = { mimeType: 'audio/mp4', audioBitsPerSecond: 16000 };
+      } else if (MediaRecorder.isTypeSupported('audio/aac')) {
+        options = { mimeType: 'audio/aac' };
+      }
+    }
 
     mediaRecorder = new MediaRecorder(stream, options);
     audioChunks = [];
@@ -704,7 +711,8 @@ const cancelRecording = () => {
 const stopAndSendRecording = () => {
   if (mediaRecorder && isRecording.value) {
     mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      const mime = mediaRecorder.mimeType || (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
+      const audioBlob = new Blob(audioChunks, { type: mime });
       const reply = replyingToMessage.value;
       const recipient = selectedRecipientId.value;
       replyingToMessage.value = null;
