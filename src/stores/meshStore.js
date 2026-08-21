@@ -463,12 +463,6 @@ export const useMeshStore = defineStore('mesh', {
       }
 
       localStorage.setItem('salvate_users_update', Date.now().toString());
-
-      this.pushNotification({
-        type: 'status',
-        title: 'Directorio Limpio',
-        message: removedCount > 0 ? `Se han limpiado ${removedCount} contactos inactivos.` : 'No hay contactos inactivos que limpiar.'
-      });
     },
 
     updateSignalingServer(config, currentUser = null) {
@@ -1000,13 +994,6 @@ export const useMeshStore = defineStore('mesh', {
       }
 
       this.announceSelfToKnownPeers(updatedUser);
-
-      this.pushNotification({
-        type: 'status',
-        status: updatedUser.status,
-        title: 'Reporte Registrado',
-        message: `Tu estado "${updatedUser.status}" se ha guardado en la red.`
-      });
     },
 
     async processOutboxQueue() {
@@ -1135,12 +1122,6 @@ export const useMeshStore = defineStore('mesh', {
           id: broadcastMsg.id
         }).catch(() => {});
       }
-
-      this.pushNotification({
-        type: 'broadcast',
-        title: (hasActiveConn || isOnline) ? 'Mensaje Transmitido' : 'Mensaje en Cola Offline',
-        message: type === 'audio' ? 'Nota de voz grabada' : `"${content}"`
-      });
 
       return broadcastMsg;
     },
@@ -1330,9 +1311,9 @@ export const useMeshStore = defineStore('mesh', {
 
       if (data.type === 'STATUS_UPDATE') {
         const peer = data.payload;
+        if (!peer || peer.id === currentUserId) return;
 
-        if (peer && peer.id !== currentUserId) {
-          const existingUser = this.users.find(u => u.id === peer.id);
+        const existingUser = this.users.find(u => u.id === peer.id);
           const previousStatus = existingUser?.status;
           const statusChanged = previousStatus && previousStatus !== peer.status;
           const isExplicitSOS = data.isPing && peer.status === 'Requiere ayuda';
@@ -1394,7 +1375,6 @@ export const useMeshStore = defineStore('mesh', {
               } catch (e) {}
             }
           });
-        }
         return;
       }
 
