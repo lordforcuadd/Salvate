@@ -17,13 +17,21 @@ self.addEventListener('push', (event) => {
   const isSeismic = type === 'seismic';
   const notifTag = data.tag || `salvate-${type}-${data.id || 'event'}`;
 
+  const mag = Number(data.mag || data.magnitude || (data.data && (data.data.mag || data.data.magnitude)) || 4.0);
+  let seismicVibration = [350, 150, 350];
+  if (mag >= 6.0) {
+    seismicVibration = [1000, 250, 1000, 250, 1500, 300, 2000];
+  } else if (mag >= 4.5) {
+    seismicVibration = [600, 200, 600, 200, 600];
+  }
+
   const options = {
     body: data.body || (isSeismic ? 'Sismo registrado en Perú.' : 'Alerta comunitaria recibida.'),
     icon: '/pwa-192x192.png',
     badge: '/pwa-192x192.png',
-    vibrate: isSeismic ? [500, 200, 500, 200, 700] : (type === 'status' ? [200, 100, 200] : [150, 80, 150]),
+    vibrate: isSeismic ? seismicVibration : (type === 'status' ? [200, 100, 200] : [150, 80, 150]),
     tag: notifTag,
-    data: data.data || { url: '/', tab: data.tabToOpen || (isSeismic ? 'seismic' : 'dashboard') },
+    data: data.data || { url: '/', tab: data.tabToOpen || (isSeismic ? 'seismic' : 'dashboard'), mag },
     requireInteraction: isSeismic || type === 'status' || type === 'hazard',
     renotify: false,
     actions: [
@@ -88,14 +96,19 @@ self.addEventListener('periodicsync', (event) => {
           if (peruEvents.length > 0) {
             const newest = peruEvents[0];
             const eventAge = Date.now() - newest.properties.time;
-            if (eventAge < 15 * 60 * 1000) {
-              return self.registration.showNotification(`🌋 Sismo Detectado M${newest.properties.mag.toFixed(1)}`, {
-                body: `${newest.properties.place} (Alerta de Emergencia Oficial)`,
+            if (eventAge < 2 * 60 * 60 * 1000) {
+              const mag = newest.properties.mag;
+              const isEarthquake = mag >= 6.0;
+              const isModerate = mag >= 4.5 && mag < 6.0;
+              const label = isEarthquake ? '🚨 ¡TERREMOTO DETECTADO!' : (isModerate ? '⚠️ ¡SISMO DETECTADO!' : '🔔 ¡TEMBLOR DETECTADO!');
+
+              return self.registration.showNotification(`${label} M${mag.toFixed(1)}`, {
+                body: `${newest.properties.place} (Prof: ${newest.geometry.coordinates[2] || 10} km)`,
                 icon: '/pwa-192x192.png',
                 badge: '/pwa-192x192.png',
-                vibrate: [500, 200, 500, 200, 700],
+                vibrate: mag >= 6.0 ? [1000, 250, 1000, 250, 1500, 300, 2000] : (mag >= 4.5 ? [600, 200, 600, 200, 600] : [350, 150, 350]),
                 tag: `seismic-${newest.id}`,
-                data: { tab: 'seismic' },
+                data: { tab: 'seismic', mag },
                 requireInteraction: true,
                 renotify: false
               });

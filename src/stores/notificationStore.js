@@ -32,50 +32,90 @@ export function closeSharedAudioContext() {
   }
 }
 
-function playAlertChirp(type = 'default') {
+function playAlertChirp(type, meta = {}) {
   try {
-    if (!userHasInteracted) return; // Prevent browser autoplay policy warnings
     if (!sharedAudioCtx) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        try { sharedAudioCtx = new AudioCtx(); } catch (e) {}
+      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtxClass) {
+        sharedAudioCtx = new AudioCtxClass();
       }
     }
     if (!sharedAudioCtx) return;
 
-    if (sharedAudioCtx.state === 'suspended') {
-      sharedAudioCtx.resume().catch(() => {});
-      return;
+    const ctx = sharedAudioCtx;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
     }
 
-    const ctx = sharedAudioCtx;
     const now = ctx.currentTime;
 
     if (type === 'seismic') {
-      // 🌋 ALERTA SÍSMICA: Doble sirena pulsante de emergencia urgente
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sawtooth';
-      osc1.frequency.setValueAtTime(659.25, now);
-      osc1.frequency.exponentialRampToValueAtTime(1046.5, now + 0.18);
-      gain1.gain.setValueAtTime(0.28, now);
-      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.22);
+      const mag = Number(meta.magnitude || meta.mag || 4.0);
+      const isEarthquake = mag >= 6.0;
+      const isModerate = mag >= 4.5 && mag < 6.0;
 
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'triangle';
-      osc2.frequency.setValueAtTime(880, now + 0.15);
-      osc2.frequency.exponentialRampToValueAtTime(1318.5, now + 0.35);
-      gain2.gain.setValueAtTime(0.32, now + 0.15);
-      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(now + 0.15);
-      osc2.stop(now + 0.45);
+      if (isEarthquake) {
+        // 🚨 1. TERREMOTO MAYOR (M6.0+): Sirena de Emergencia y Evacuación Inmediata (Oscilante agresiva + pulsos)
+        for (let pulse = 0; pulse < 3; pulse++) {
+          const pStart = now + (pulse * 0.32);
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(450, pStart);
+          osc.frequency.linearRampToValueAtTime(1150, pStart + 0.16);
+          osc.frequency.linearRampToValueAtTime(500, pStart + 0.28);
+          gain.gain.setValueAtTime(0.4, pStart);
+          gain.gain.exponentialRampToValueAtTime(0.01, pStart + 0.30);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(pStart);
+          osc.stop(pStart + 0.30);
+        }
+        return;
+      }
+
+      if (isModerate) {
+        // ⚠️ 2. SISMO MODERADO (M4.5 - M5.9): Doble Sirena Táctica Urgente
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(659.25, now);
+        osc1.frequency.exponentialRampToValueAtTime(1046.5, now + 0.18);
+        gain1.gain.setValueAtTime(0.3, now);
+        gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.22);
+
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(880, now + 0.15);
+        osc2.frequency.exponentialRampToValueAtTime(1318.5, now + 0.35);
+        gain2.gain.setValueAtTime(0.32, now + 0.15);
+        gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now + 0.15);
+        osc2.stop(now + 0.45);
+        return;
+      }
+
+      // 🔔 3. TEMBLOR LEVE (M3.5 - M4.4): Campana de Aviso Sísmico Suave (Acorde armónico E5 ➔ B5 ➔ E6)
+      const freqs = [659.25, 987.77, 1318.51];
+      freqs.forEach((f, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, now + (i * 0.07));
+        gain.gain.setValueAtTime(0.24, now + (i * 0.07));
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + (i * 0.07));
+        osc.stop(now + 0.45);
+      });
       return;
     }
 
@@ -234,7 +274,7 @@ export const useNotificationStore = defineStore('notification', {
       }
     },
 
-    async notify({ type = 'broadcast', title, body, tag, id, tabToOpen = null }) {
+    async notify({ type = 'broadcast', title, body, tag, id, tabToOpen = null, meta = {} }) {
       // Prevent duplicate notification for identical event ID or content
       const eventKey = id || tag || `${type}_${title}_${body}`;
       if (this.notifiedEventIds.includes(eventKey)) {
@@ -257,14 +297,21 @@ export const useNotificationStore = defineStore('notification', {
 
       // Audio feedback (safe against autoplay policy)
       if (this.soundEnabled && userHasInteracted) {
-        playAlertChirp(type);
+        playAlertChirp(type, meta);
       }
 
       // Physical vibration feedback on mobile (safe against browser intervention)
       if (userHasInteracted && this.vibrationEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
           if (type === 'seismic') {
-            navigator.vibrate([500, 200, 500, 200, 700]);
+            const mag = Number(meta.magnitude || meta.mag || 4.0);
+            if (mag >= 6.0) {
+              navigator.vibrate([1000, 250, 1000, 250, 1500, 300, 2000]);
+            } else if (mag >= 4.5) {
+              navigator.vibrate([600, 200, 600, 200, 600]);
+            } else {
+              navigator.vibrate([300, 150, 300]);
+            }
           } else if (type === 'status') {
             navigator.vibrate([200, 100, 200]);
           } else {

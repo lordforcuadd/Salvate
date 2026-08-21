@@ -369,19 +369,27 @@ export const useSeismicStore = defineStore('seismic', {
           localStorage.setItem('salvate_notified_events', JSON.stringify(notifStore.notifiedEventIds));
         } catch (e) {}
       } else {
-        // Only during active live polling, detect FRESH earthquakes (< 3 min) that occurred while using the app
+        // During active live polling, detect any newly published earthquakes in Peru (< 2h age) that appear in the feed
         if (peruOnly.length > 0) {
           const newest = peruOnly[0];
           const eventAgeMs = Date.now() - new Date(newest.time).getTime();
-          if (eventAgeMs >= 0 && eventAgeMs < 180000 && (newest.magnitude >= 3.5 || newest.felt)) {
+          const isRecent = eventAgeMs >= 0 && eventAgeMs < 2 * 60 * 60 * 1000; // Within last 2 hours (handles IGP human review lag)
+
+          if (isRecent && (newest.magnitude >= 3.5 || newest.felt)) {
             if (!notifStore.notifiedEventIds.includes(newest.id)) {
               const classLabel = newest.classification?.label || 'SISMO';
               notifStore.notify({
                 type: 'seismic',
-                title: `Alerta: ${classLabel} M${newest.magnitude.toFixed(1)}`,
-                body: `${newest.placeTitle} (Prof: ${newest.depthKm} km)`,
+                title: `¡${classLabel}! M${newest.magnitude.toFixed(1)} • ${newest.placeTitle}`,
+                body: `Prof: ${newest.depthKm} km • ${newest.proximityText || 'Perú'}`,
                 id: newest.id,
-                tabToOpen: 'seismic'
+                tabToOpen: 'seismic',
+                meta: {
+                  magnitude: newest.magnitude,
+                  mag: newest.magnitude,
+                  severity: newest.classification?.type || 'minor',
+                  depthKm: newest.depthKm
+                }
               });
             }
           }
