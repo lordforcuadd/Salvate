@@ -36,15 +36,21 @@ function playAlertChirp(type = 'default') {
 }
 
 export const useNotificationStore = defineStore('notification', {
-  state: () => ({
-    permission: typeof Notification !== 'undefined' ? Notification.permission : 'default',
-    unreadBroadcasts: 0,
-    unreadSeismic: 0,
-    unreadHazards: 0,
-    soundEnabled: true,
-    vibrationEnabled: true,
-    notifiedEventIds: []
-  }),
+  state: () => {
+    let savedIds = [];
+    try {
+      savedIds = JSON.parse(localStorage.getItem('salvate_notified_events') || '[]');
+    } catch (e) {}
+    return {
+      permission: typeof Notification !== 'undefined' ? Notification.permission : 'default',
+      unreadBroadcasts: 0,
+      unreadSeismic: 0,
+      unreadHazards: 0,
+      soundEnabled: true,
+      vibrationEnabled: true,
+      notifiedEventIds: Array.isArray(savedIds) ? savedIds : []
+    };
+  },
 
   getters: {
     hasPermission: (state) => state.permission === 'granted',
@@ -93,6 +99,9 @@ export const useNotificationStore = defineStore('notification', {
         if (this.notifiedEventIds.length > 50) {
           this.notifiedEventIds.shift();
         }
+        try {
+          localStorage.setItem('salvate_notified_events', JSON.stringify(this.notifiedEventIds));
+        } catch (e) {}
       }
 
       // Increment badge counters

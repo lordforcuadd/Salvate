@@ -10,7 +10,8 @@ export const useSeismicStore = defineStore('seismic', {
     lastUpdated: null,
     pollingInterval: null,
     timeRange: '24h', // '24h' | '7d' | '30d'
-    userCoords: null
+    userCoords: null,
+    _isFirstFetch: true
   }),
 
   getters: {
@@ -351,20 +352,39 @@ export const useSeismicStore = defineStore('seismic', {
       this.lastUpdated = new Date().toISOString();
       this.isLoading = false;
 
-      // Detectar sismos frescos recientes (< 30 min) para notificación del celular y burbuja roja
-      if (peruOnly.length > 0) {
-        const newest = peruOnly[0];
-        const eventAgeMs = Date.now() - new Date(newest.time).getTime();
-        if (eventAgeMs >= 0 && eventAgeMs < 1800000 && (newest.magnitude >= 3.5 || newest.felt)) {
-          const notifStore = useNotificationStore();
-          const classLabel = newest.classification?.label || 'SISMO';
-          notifStore.notify({
-            type: 'seismic',
-            title: `Alerta: ${classLabel} M${newest.magnitude.toFixed(1)}`,
-            body: `${newest.placeTitle} (Prof: ${newest.depthKm} km)`,
-            id: newest.id,
-            tabToOpen: 'seismic'
-          });
+      const notifStore = useNotificationStore();
+
+      // On initial page load, mark all current historical events as seen so reloading the app never triggers past notifications
+      if (this._isFirstFetch) {
+        this._isFirstFetch = false;
+        peruOnly.forEach(evt => {
+          if (evt.id && !notifStore.notifiedEventIds.includes(evt.id)) {
+            notifStore.notifiedEventIds.push(evt.id);
+          }
+        });
+        if (notifStore.notifiedEventIds.length > 50) {
+          notifStore.notifiedEventIds = notifStore.notifiedEventIds.slice(-50);
+        }
+        try {
+          localStorage.setItem('salvate_notified_events', JSON.stringify(notifStore.notifiedEventIds));
+        } catch (e) {}
+      } else {
+        // Only during active live polling, detect FRESH earthquakes (< 3 min) that occurred while using the app
+        if (peruOnly.length > 0) {
+          const newest = peruOnly[0];
+          const eventAgeMs = Date.now() - new Date(newest.time).getTime();
+          if (eventAgeMs >= 0 && eventAgeMs < 180000 && (newest.magnitude >= 3.5 || newest.felt)) {
+            if (!notifStore.notifiedEventIds.includes(newest.id)) {
+              const classLabel = newest.classification?.label || 'SISMO';
+              notifStore.notify({
+                type: 'seismic',
+                title: `Alerta: ${classLabel} M${newest.magnitude.toFixed(1)}`,
+                body: `${newest.placeTitle} (Prof: ${newest.depthKm} km)`,
+                id: newest.id,
+                tabToOpen: 'seismic'
+              });
+            }
+          }
         }
       }
     }

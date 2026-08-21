@@ -191,13 +191,16 @@ export const useMeshStore = defineStore('mesh', {
 
     broadcastGossipLocally(payload) {
       if (!payload) return;
+      const msgId = payload._msgId || `g_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      const packet = { ...payload, _msgId: msgId, _ts: Date.now() };
+
       if (this.broadcastChannel) {
         try {
-          this.broadcastChannel.postMessage(payload);
+          this.broadcastChannel.postMessage(packet);
         } catch (e) {}
       }
       try {
-        localStorage.setItem('salvate_live_gossip', JSON.stringify({ ...payload, _ts: Date.now() + Math.random() }));
+        localStorage.setItem('salvate_live_gossip', JSON.stringify(packet));
       } catch (e) {}
     },
 
@@ -728,6 +731,7 @@ export const useMeshStore = defineStore('mesh', {
       await this.registerOrUpdatePeerUser(peerPlaceholder);
 
       const linkPayload = {
+        _msgId: `link_${cleanTargetId}_${Date.now()}`,
         type: 'LINK_PEER',
         targetId: cleanTargetId,
         sender: currentUser
@@ -852,6 +856,24 @@ export const useMeshStore = defineStore('mesh', {
 
     async handleIncomingGossip(data) {
       if (!data || !data.type) return;
+
+      // Global Packet Deduplication across BroadcastChannel, StorageEvent, and WebRTC
+      const packetSignature = data._msgId || `${data.type}_${data.sender?.id || data.payload?.id || data.userId || ''}_${data.payload?.updatedAt || data.payload?.timestamp || data._ts || ''}`;
+      
+      if (!this._seenGossipSignatures) {
+        this._seenGossipSignatures = new Set();
+      }
+
+      if (packetSignature && this._seenGossipSignatures.has(packetSignature)) {
+        return; // Silently drop identical packet delivered by redundant transport
+      }
+
+      this._seenGossipSignatures.add(packetSignature);
+      if (this._seenGossipSignatures.size > 200) {
+        const [first] = this._seenGossipSignatures;
+        this._seenGossipSignatures.delete(first);
+      }
+
       const authStore = useAuthStore();
       const currentUserId = authStore.userId;
 
