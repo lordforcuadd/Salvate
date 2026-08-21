@@ -135,8 +135,41 @@ export const useMeshStore = defineStore('mesh', {
 
       if (!this.pollInterval) {
         this.pollInterval = setInterval(async () => {
+          // Prune closed / dead connections
+          this.peerConnections = this.peerConnections.filter(c => c && c.open !== false);
+          this.activePeersCount = this.peerConnections.length;
+
           await this.reloadFromDB();
-        }, 3000);
+
+          // Auto-reconnect with known contacts if disconnected
+          const authStore = useAuthStore();
+          if (authStore.user && this.peerInstance && !this.peerInstance.destroyed && !this.peerInstance.disconnected) {
+            this.users.forEach(u => {
+              if (u.id !== authStore.user.id) {
+                const cleanTargetId = u.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const isAlreadyConnected = this.peerConnections.some(c => c.peer === cleanTargetId && c.open);
+                if (!isAlreadyConnected) {
+                  this.connectToPeer(cleanTargetId, authStore.user);
+                }
+              }
+            });
+          }
+        }, 4000);
+      }
+
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            this.reloadFromDB();
+            const authStore = useAuthStore();
+            if (authStore.user) {
+              if (this.peerInstance && !this.peerInstance.destroyed && this.peerInstance.disconnected) {
+                try { this.peerInstance.reconnect(); } catch (e) {}
+              }
+              this.announceSelfToKnownPeers(authStore.user);
+            }
+          }
+        });
       }
 
       if (currentUser && currentUser.id) {
@@ -356,7 +389,17 @@ export const useMeshStore = defineStore('mesh', {
     },
 
     registerDataConnection(conn, currentUser = null) {
-      if (this.peerConnections.some(c => c.peer === conn.peer)) return;
+      if (!conn || !conn.peer) return;
+
+      const existingIdx = this.peerConnections.findIndex(c => c.peer === conn.peer);
+      if (existingIdx >= 0) {
+        const oldConn = this.peerConnections[existingIdx];
+        if (oldConn !== conn) {
+          try { oldConn.close(); } catch (e) {}
+          this.peerConnections.splice(existingIdx, 1);
+        }
+      }
+
       this.peerConnections.push(conn);
       this.activePeersCount = this.peerConnections.length;
 
@@ -365,11 +408,28 @@ export const useMeshStore = defineStore('mesh', {
           try {
             conn.send({
               type: 'STATUS_UPDATE',
-              payload: currentUser
+              payload: currentUser,
+              isPing: true
             });
             conn.send({
               type: 'REQUEST_STATUS'
             });
+            conn.send({
+              type: 'SYNC_REQUEST'
+            });
+            if (this.broadcasts && this.broadcasts.length > 0) {
+              conn.send({
+                type: 'SYNC_BROADCASTS',
+                payload: this.broadcasts.slice(0, 30)
+              });
+            }
+            const hazardStore = useHazardStore();
+            if (hazardStore.hazards && hazardStore.hazards.length > 0) {
+              conn.send({
+                type: 'SYNC_HAZARDS',
+                payload: hazardStore.hazards.slice(0, 20)
+              });
+            }
           } catch (e) {}
         }
       };
@@ -383,13 +443,21 @@ export const useMeshStore = defineStore('mesh', {
       }
 
       conn.on('data', (data) => {
-        this.handleIncomingGossip(data);
+        try {
+          const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+          this.handleIncomingGossip(parsed);
+        } catch (e) {
+          this.handleIncomingGossip(data);
+        }
       });
 
-      conn.on('close', () => {
-        this.peerConnections = this.peerConnections.filter(c => c.peer !== conn.peer);
+      const handleCloseOrError = () => {
+        this.peerConnections = this.peerConnections.filter(c => c !== conn && c.peer !== conn.peer);
         this.activePeersCount = this.peerConnections.length;
-      });
+      };
+
+      conn.on('close', handleCloseOrError);
+      conn.on('error', handleCloseOrError);
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -545,21 +613,38 @@ export const useMeshStore = defineStore('mesh', {
           this.pendingNegotiationPC = null;
         }
 
-        if (!this.peerConnections.some(c => c.peer === cleanPeerId)) {
-          this.peerConnections.push(wrappedConn);
-          this.activePeersCount = this.peerConnections.length;
+        const existingIdx = this.peerConnections.findIndex(c => c.peer === cleanPeerId);
+        if (existingIdx >= 0) {
+          const oldConn = this.peerConnections[existingIdx];
+          if (oldConn !== wrappedConn) {
+            try { oldConn.close(); } catch (e) {}
+            this.peerConnections.splice(existingIdx, 1);
+          }
         }
+
+        this.peerConnections.push(wrappedConn);
+        this.activePeersCount = this.peerConnections.length;
         this.isP2PActive = true;
 
         if (currentUser) {
           try {
             wrappedConn.send({
               type: 'STATUS_UPDATE',
-              payload: currentUser
+              payload: currentUser,
+              isPing: true
             });
             wrappedConn.send({
               type: 'REQUEST_STATUS'
             });
+            wrappedConn.send({
+              type: 'SYNC_REQUEST'
+            });
+            if (this.broadcasts && this.broadcasts.length > 0) {
+              wrappedConn.send({
+                type: 'SYNC_BROADCASTS',
+                payload: this.broadcasts.slice(0, 30)
+              });
+            }
           } catch (e) {}
         }
 
@@ -969,6 +1054,85 @@ export const useMeshStore = defineStore('mesh', {
               } catch (e) {}
             }
           });
+        }
+        return;
+      }
+
+      if (data.type === 'SYNC_REQUEST') {
+        if (this.broadcasts && this.broadcasts.length > 0) {
+          const syncBroadcastsPayload = {
+            type: 'SYNC_BROADCASTS',
+            payload: this.broadcasts.slice(0, 30)
+          };
+          this.peerConnections.forEach(conn => {
+            if (conn && conn.open) {
+              try { conn.send(syncBroadcastsPayload); } catch (e) {}
+            }
+          });
+        }
+        const hazardStore = useHazardStore();
+        if (hazardStore.hazards && hazardStore.hazards.length > 0) {
+          const syncHazardsPayload = {
+            type: 'SYNC_HAZARDS',
+            payload: hazardStore.hazards.slice(0, 20)
+          };
+          this.peerConnections.forEach(conn => {
+            if (conn && conn.open) {
+              try { conn.send(syncHazardsPayload); } catch (e) {}
+            }
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'SYNC_BROADCASTS') {
+        const list = Array.isArray(data.payload) ? data.payload : (Array.isArray(data.broadcasts) ? data.broadcasts : []);
+        let hasNew = false;
+
+        for (const msg of list) {
+          if (!msg || !msg.id) continue;
+          if (msg.senderId && msg.senderId !== currentUserId) {
+            this.registerOrUpdatePeerUser({
+              id: msg.senderId,
+              name: msg.senderName,
+              coords: msg.coords,
+              updatedAt: msg.timestamp
+            });
+          }
+
+          const exists = this.broadcasts.some(b => b.id === msg.id);
+          if (!exists) {
+            this.broadcasts.push(msg);
+            saveDBItem('broadcast_messages', msg).catch(() => {});
+            hasNew = true;
+          }
+        }
+
+        if (hasNew) {
+          this.broadcasts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+        }
+        return;
+      }
+
+      if (data.type === 'SYNC_HAZARDS') {
+        const list = Array.isArray(data.payload) ? data.payload : [];
+        const hazardStore = useHazardStore();
+        let hasNewHazard = false;
+
+        for (const h of list) {
+          if (!h || !h.id) continue;
+          const exists = hazardStore.hazards.some(item => item.id === h.id);
+          if (!exists) {
+            hazardStore.hazards.push(h);
+            saveDBItem('hazard_reports', h).catch(() => {});
+            hasNewHazard = true;
+          }
+        }
+
+        if (hasNewHazard) {
+          hazardStore.hazards.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          localStorage.setItem('salvate_hazards_update', Date.now().toString());
         }
         return;
       }

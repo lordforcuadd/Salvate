@@ -7,26 +7,26 @@
     <!-- Top Navbar -->
     <Navbar @open-profile="openTab('directory')" />
 
-    <!-- STACKABLE NOTIFICATION TOAST FEED (Top-Right Sticky) -->
-    <div class="fixed top-14 right-3 sm:right-6 z-[9999] max-w-sm w-full space-y-2 pointer-events-none p-2">
+    <!-- STACKABLE NOTIFICATION TOAST FEED (Centered on Mobile, Top-Right on Desktop) -->
+    <div class="fixed top-14 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 z-[9999] w-[calc(100%-1.5rem)] max-w-sm space-y-2 pointer-events-none p-1">
       <div 
         v-for="n in meshStore.notifications" 
         :key="n.id"
         :class="[
-          'p-3.5 rounded-2xl border backdrop-blur-xl shadow-2xl pointer-events-auto transition-all flex items-start justify-between gap-3 animate-slide-in',
+          'p-3 sm:p-3.5 rounded-2xl border backdrop-blur-xl shadow-2xl pointer-events-auto transition-all flex items-start justify-between gap-3 animate-slide-in',
           n.colorClass
         ]"
       >
-        <div class="flex items-start gap-2.5">
+        <div class="flex items-start gap-2.5 min-w-0 flex-1">
           <div class="w-7 h-7 rounded-xl bg-zinc-900/80 border border-zinc-700/60 flex items-center justify-center shrink-0">
             <Radio class="w-3.5 h-3.5" />
           </div>
-          <div>
-            <div class="flex items-center gap-2">
-              <h5 class="text-xs font-black tracking-tight">{{ n.title }}</h5>
-              <span class="text-[10px] opacity-75 font-mono">{{ n.timestamp }}</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <h5 class="text-xs font-black tracking-tight truncate">{{ n.title }}</h5>
+              <span class="text-[10px] opacity-75 font-mono shrink-0">{{ n.timestamp }}</span>
             </div>
-            <p class="text-xs mt-0.5 leading-snug">{{ n.message }}</p>
+            <p class="text-xs mt-0.5 leading-snug break-words">{{ n.message }}</p>
           </div>
         </div>
 
