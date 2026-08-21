@@ -74,15 +74,21 @@ export async function fetchRecentCloudMessages(limit = 40) {
 }
 
 export async function syncPingToCloud(ping) {
-  if (!navigator.onLine) return null;
+  if (!navigator.onLine || !ping) return null;
   try {
+    const userId = ping.userId || ping.id;
+    const userName = ping.userName || ping.name;
+    if (!userId || !userName) return null;
+
     const payload = {
-      id: ping.id || `ping_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      user_id: ping.userId,
-      user_name: ping.userName,
+      id: (ping.pingId || (typeof ping.id === 'string' && ping.id.startsWith('ping_'))) 
+        ? ping.id 
+        : `ping_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      user_id: userId,
+      user_name: userName,
       status: ping.status || 'A salvo',
       coords: ping.coords || null,
-      is_ping: Boolean(ping.isPing)
+      is_ping: ping.isPing !== false
     };
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/salvate_pings`, {

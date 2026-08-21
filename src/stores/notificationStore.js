@@ -1,11 +1,54 @@
 import { defineStore } from 'pinia';
 import { VAPID_PUBLIC_KEY, registerPushSubscription, urlBase64ToUint8Array, sendRemoteWebPush } from '../services/supabase';
 
+let sharedAudioCtx = null;
+let userHasInteracted = false;
+let _listenersRegistered = false;
+
+function unlockAudio() {
+  userHasInteracted = true;
+  if (!sharedAudioCtx) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      try { sharedAudioCtx = new AudioCtx(); } catch (e) {}
+    }
+  }
+  if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+    sharedAudioCtx.resume().catch(() => {});
+  }
+}
+
+if (typeof window !== 'undefined' && !_listenersRegistered) {
+  _listenersRegistered = true;
+  ['click', 'touchstart', 'touchend', 'pointerdown', 'keydown'].forEach(evt => {
+    window.addEventListener(evt, unlockAudio, { passive: true });
+  });
+}
+
+export function closeSharedAudioContext() {
+  if (sharedAudioCtx) {
+    try { sharedAudioCtx.close(); } catch (e) {}
+    sharedAudioCtx = null;
+  }
+}
+
 function playAlertChirp(type = 'default') {
   try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    if (!userHasInteracted) return; // Prevent browser autoplay policy warnings
+    if (!sharedAudioCtx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        try { sharedAudioCtx = new AudioCtx(); } catch (e) {}
+      }
+    }
+    if (!sharedAudioCtx) return;
+
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+      return;
+    }
+
+    const ctx = sharedAudioCtx;
     const now = ctx.currentTime;
 
     if (type === 'seismic') {
@@ -33,8 +76,6 @@ function playAlertChirp(type = 'default') {
       gain2.connect(ctx.destination);
       osc2.start(now + 0.15);
       osc2.stop(now + 0.45);
-
-      setTimeout(() => ctx.close().catch(() => {}), 600);
       return;
     }
 
@@ -51,8 +92,6 @@ function playAlertChirp(type = 'default') {
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.38);
-
-      setTimeout(() => ctx.close().catch(() => {}), 500);
       return;
     }
 
@@ -71,8 +110,6 @@ function playAlertChirp(type = 'default') {
         osc.start(now + (i * 0.05));
         osc.stop(now + 0.35);
       });
-
-      setTimeout(() => ctx.close().catch(() => {}), 500);
       return;
     }
 
@@ -98,10 +135,6 @@ function playAlertChirp(type = 'default') {
     gain2.connect(ctx.destination);
     osc2.start(now + 0.08);
     osc2.stop(now + 0.36);
-
-    setTimeout(() => {
-      ctx.close().catch(() => {});
-    }, 500);
   } catch (e) {}
 }
 
@@ -223,16 +256,16 @@ export const useNotificationStore = defineStore('notification', {
 
       this.updateBadgesAndTitle();
 
-      // Audio feedback
-      if (this.soundEnabled) {
+      // Audio feedback (safe against autoplay policy)
+      if (this.soundEnabled && userHasInteracted) {
         playAlertChirp(type);
       }
 
-      // Physical vibration feedback on mobile
-      if (this.vibrationEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
+      // Physical vibration feedback on mobile (safe against browser intervention)
+      if (userHasInteracted && this.vibrationEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
           if (type === 'seismic') {
-            navigator.vibrate([300, 100, 300, 100, 400]);
+            navigator.vibrate([500, 200, 500, 200, 700]);
           } else if (type === 'status') {
             navigator.vibrate([200, 100, 200]);
           } else {
