@@ -34,9 +34,9 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      const hasFocusedClient = clientList.some(c => c.focused);
-      // Suppress duplicate OS banner if app is currently focused in foreground (except critical seismic alarms)
-      if (hasFocusedClient && !isSeismic) {
+      const isForeground = (clientList || []).some(c => c.visibilityState === 'visible' || c.focused);
+      // Suppress duplicate OS banner if app is currently visible/open in foreground (except critical seismic alarms)
+      if (isForeground && !isSeismic) {
         return;
       }
       return self.registration.showNotification(title, options);

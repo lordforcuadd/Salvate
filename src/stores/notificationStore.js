@@ -273,9 +273,13 @@ export const useNotificationStore = defineStore('notification', {
         } catch (e) {}
       }
 
-      // Native System Push / Web Notification (Deterministic tag avoids duplicates in OS shade)
-      if (typeof Notification !== 'undefined') {
-        const notifTag = tag || `salvate-${type}-${id || 'event'}`;
+      const notifTag = tag || `salvate-${type}-${id || 'event'}`;
+
+      // Native System Push / Web Notification:
+      // Only fire native OS notification if the document is hidden/background (prevent spamming user while active in-app)
+      const isDocumentHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
+      if (isDocumentHidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const options = {
           body,
           icon: '/pwa-192x192.png',
@@ -288,50 +292,32 @@ export const useNotificationStore = defineStore('notification', {
         };
 
         const triggerNative = async () => {
-          if (Notification.permission === 'granted') {
-            try {
-              if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-                const reg = await navigator.serviceWorker.ready;
-                if (reg && reg.showNotification) {
-                  await reg.showNotification(title, options);
-                  return;
-                }
+          try {
+            if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+              const reg = await navigator.serviceWorker.ready;
+              if (reg && reg.showNotification) {
+                await reg.showNotification(title, options);
+                return;
               }
-            } catch (e) {}
-            try {
-              new Notification(title, options);
-            } catch (e) {}
-          } else if (Notification.permission === 'default') {
-            const perm = await this.requestPermission();
-            if (perm === 'granted') {
-              try {
-                if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-                  const reg = await navigator.serviceWorker.ready;
-                  if (reg && reg.showNotification) {
-                    await reg.showNotification(title, options);
-                    return;
-                  }
-                }
-              } catch (e) {}
-              try {
-                new Notification(title, options);
-              } catch (e) {}
             }
-          }
+          } catch (e) {}
+          try {
+            new Notification(title, options);
+          } catch (e) {}
         };
 
         triggerNative().catch(() => {});
+      }
 
-        // Broadcast to all remote phones via Web Push if seismic or hazard alert
-        if (navigator.onLine && (type === 'seismic' || type === 'hazard')) {
-          sendRemoteWebPush({
-            title,
-            body,
-            type,
-            tabToOpen: tabToOpen || type,
-            tag: options.tag
-          }).catch(() => {});
-        }
+      // Broadcast to all remote phones via Web Push if seismic or hazard alert
+      if (navigator.onLine && (type === 'seismic' || type === 'hazard')) {
+        sendRemoteWebPush({
+          title,
+          body,
+          type,
+          tabToOpen: tabToOpen || type,
+          tag: notifTag
+        }).catch(() => {});
       }
     },
 
