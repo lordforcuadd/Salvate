@@ -692,7 +692,7 @@ export const useMeshStore = defineStore('mesh', {
             wrappedConn.send({
               type: 'STATUS_UPDATE',
               payload: currentUser,
-              isPing: true
+              isPing: false
             });
             wrappedConn.send({
               type: 'REQUEST_STATUS'
