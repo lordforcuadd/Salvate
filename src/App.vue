@@ -13,9 +13,10 @@
         v-for="n in meshStore.notifications" 
         :key="n.id"
         :class="[
-          'p-3 sm:p-3.5 rounded-2xl border backdrop-blur-xl shadow-2xl pointer-events-auto transition-all flex items-start justify-between gap-3 animate-slide-in',
+          'p-3 sm:p-3.5 rounded-2xl border backdrop-blur-xl shadow-2xl pointer-events-auto transition-all flex items-start justify-between gap-3 animate-slide-in cursor-pointer active:scale-[0.98]',
           n.colorClass
         ]"
+        @click="handleToastClick(n)"
       >
         <div class="flex items-start gap-2.5 min-w-0 flex-1">
           <div class="w-7 h-7 rounded-xl bg-zinc-900/80 border border-zinc-700/60 flex items-center justify-center shrink-0">
@@ -33,7 +34,7 @@
         <button 
           type="button"
           class="text-xs opacity-60 hover:opacity-100 font-black shrink-0 p-1 cursor-pointer active:scale-95"
-          @click="meshStore.dismissNotification(n.id)"
+          @click.stop="meshStore.dismissNotification(n.id)"
         >
           ✕
         </button>
@@ -362,15 +363,27 @@ const mobileMoreTabs = [
   },
 ];
 
+const handleToastClick = (n) => {
+  if (n.type === 'broadcast') {
+    openTab('broadcast');
+  } else if (n.type === 'seismic') {
+    openTab('seismic');
+  } else if (n.type === 'hazard') {
+    openTab('hazards');
+  } else if (n.type === 'status') {
+    openTab('status');
+  }
+  meshStore.dismissNotification(n.id);
+};
+
 const openTab = (tabId) => {
   activeTab.value = tabId;
   notificationStore.clearUnread(tabId);
 };
 
 const selectMoreTab = (tabId) => {
-  activeTab.value = tabId;
-  notificationStore.clearUnread(tabId);
   isMoreMenuOpen.value = false;
+  openTab(tabId);
 };
 
 const getStatusBadgeVariant = (status) => {
@@ -386,7 +399,7 @@ watch(activeTab, (newTab) => {
 onMounted(async () => {
   authStore.initAuth();
   if (authStore.isAuthenticated) {
-    meshStore.initMesh(authStore.user);
+    await meshStore.initMesh(authStore.user);
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       notificationStore.requestPermission();
     }
@@ -397,11 +410,11 @@ onMounted(async () => {
   }
 });
 
-watch(() => authStore.user, (newUser) => {
-  if (newUser) {
-    meshStore.initMesh(newUser);
+watch(() => authStore.isAuthenticated, async (isAuth) => {
+  if (isAuth && authStore.user) {
+    await meshStore.initMesh(authStore.user);
   }
-}, { deep: true });
+});
 
 onBeforeUnmount(() => {
   meshStore.stopMesh();
