@@ -6,33 +6,102 @@ function playAlertChirp(type = 'default') {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    const now = ctx.currentTime;
 
     if (type === 'seismic') {
-      // Deeper double emergency alert tone
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.2);
-    } else {
-      // High-pitch tactical chirp
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
+      // 🌋 ALERTA SÍSMICA: Doble sirena pulsante de emergencia urgente
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(659.25, now);
+      osc1.frequency.exponentialRampToValueAtTime(1046.5, now + 0.18);
+      gain1.gain.setValueAtTime(0.28, now);
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.22);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(880, now + 0.15);
+      osc2.frequency.exponentialRampToValueAtTime(1318.5, now + 0.35);
+      gain2.gain.setValueAtTime(0.32, now + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.45);
+
+      setTimeout(() => ctx.close().catch(() => {}), 600);
+      return;
     }
 
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+    if (type === 'status') {
+      // 📡 PING / ESTADO: Sonar Bell / Ping de radar táctico cristalino
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, now);
+      osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.12);
+      gain.gain.setValueAtTime(0.26, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.38);
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+      setTimeout(() => ctx.close().catch(() => {}), 500);
+      return;
+    }
 
-    osc.start();
-    osc.stop(ctx.currentTime + 0.25);
+    if (type === 'hazard') {
+      // ⚠️ PELIGRO: Acorde de advertencia táctico
+      const freqs = [523.25, 659.25, 783.99];
+      freqs.forEach((f, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(f, now + (i * 0.05));
+        gain.gain.setValueAtTime(0.18, now + (i * 0.05));
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + (i * 0.05));
+        osc.stop(now + 0.35);
+      });
+
+      setTimeout(() => ctx.close().catch(() => {}), 500);
+      return;
+    }
+
+    // 💬 CHAT / MENSAJE / AUDIO: Doble timbre de cristal melódico moderno
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(1046.5, now);
+    gain1.gain.setValueAtTime(0.22, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.16);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1567.98, now + 0.08);
+    gain2.gain.setValueAtTime(0.24, now + 0.08);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.08);
+    osc2.stop(now + 0.36);
 
     setTimeout(() => {
       ctx.close().catch(() => {});
-    }, 400);
+    }, 500);
   } catch (e) {}
 }
 

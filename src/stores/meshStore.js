@@ -187,10 +187,8 @@ export const useMeshStore = defineStore('mesh', {
       initSupabaseRealtime({
         onMessage: (msg) => {
           if (!msg || !msg.id) return;
-          const authStore = useAuthStore();
-          const currentUserId = authStore.userId;
-
-          if (msg.senderId && msg.senderId !== currentUserId) {
+          const isExisting = this.users.some(u => u.id === msg.senderId);
+          if (msg.senderId && msg.senderId !== currentUserId && (isExisting || msg.recipientId === currentUserId)) {
             this.registerOrUpdatePeerUser({
               id: msg.senderId,
               name: msg.senderName,
@@ -948,6 +946,13 @@ export const useMeshStore = defineStore('mesh', {
       localStorage.setItem('salvate_users_update', Date.now().toString());
     },
 
+    async removeContact(userId) {
+      if (!userId) return;
+      this.users = this.users.filter(u => u.id !== userId);
+      await deleteDBItem('users', userId);
+      localStorage.setItem('salvate_users_update', Date.now().toString());
+    },
+
     async sendStatusPingToMesh(userObj) {
       const nowIso = new Date().toISOString();
       const updatedUser = { ...userObj, updatedAt: nowIso };
@@ -1384,8 +1389,9 @@ export const useMeshStore = defineStore('mesh', {
         const msg = data.payload;
         if (!msg || !msg.id) return;
 
-        // Auto-register sender as active user in contacts if missing
-        if (msg.senderId && msg.senderId !== currentUserId) {
+        // Only update contact record if already in contacts or if private direct message
+        const isExisting = this.users.some(u => u.id === msg.senderId);
+        if (msg.senderId && msg.senderId !== currentUserId && (isExisting || msg.recipientId === currentUserId)) {
           this.registerOrUpdatePeerUser({
             id: msg.senderId,
             name: msg.senderName,
@@ -1593,7 +1599,8 @@ export const useMeshStore = defineStore('mesh', {
 
         for (const msg of list) {
           if (!msg || !msg.id) continue;
-          if (msg.senderId && msg.senderId !== currentUserId) {
+          const isExisting = this.users.some(u => u.id === msg.senderId);
+          if (msg.senderId && msg.senderId !== currentUserId && (isExisting || msg.recipientId === currentUserId)) {
             this.registerOrUpdatePeerUser({
               id: msg.senderId,
               name: msg.senderName,

@@ -102,8 +102,8 @@
           </div>
         </div>
 
-        <!-- Ping Action Button -->
-        <div v-if="u.id !== authStore.userId" class="shrink-0 flex items-center pl-1">
+        <!-- Ping and Delete Action Buttons -->
+        <div v-if="u.id !== authStore.userId" class="shrink-0 flex items-center gap-1.5 pl-1">
           <button 
             type="button"
             class="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs flex flex-row items-center gap-1 shadow-md transition-all active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
@@ -112,6 +112,15 @@
           >
             <Radio class="w-3.5 h-3.5 shrink-0" />
             <span>Ping</span>
+          </button>
+
+          <button 
+            type="button"
+            class="h-8 sm:h-9 w-8 sm:w-9 rounded-xl bg-zinc-800/80 hover:bg-red-500/20 hover:text-red-400 text-zinc-400 border border-zinc-700/50 flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0"
+            title="Eliminar Contacto"
+            @click="deleteContact(u)"
+          >
+            <Trash2 class="w-3.5 h-3.5 shrink-0" />
           </button>
         </div>
       </div>
@@ -490,7 +499,8 @@ import {
   WifiOff, 
   CheckCircle2, 
   Zap,
-  Camera
+  Camera,
+  Trash2
 } from 'lucide-vue-next';
 
 const meshStore = useMeshStore();
@@ -723,5 +733,17 @@ const formatTime = (isoString) => {
 
 const sendPingToUser = (user) => {
   meshStore.sendStatusPingToMesh(authStore.user);
+};
+
+const deleteContact = (user) => {
+  dialogStore.showConfirm({
+    title: 'Eliminar Contacto',
+    message: `¿Estás seguro de que deseas eliminar a "${user.name}" de tus contactos guardados?`,
+    confirmText: 'Eliminar',
+    cancelText: 'Cancelar',
+    onConfirm: () => {
+      meshStore.removeContact(user.id);
+    }
+  });
 };
 </script>
