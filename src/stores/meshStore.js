@@ -4,7 +4,7 @@ import { saveDBItem, getAllDBItems, deleteDBItem } from '../services/db';
 import { useAuthStore } from './authStore';
 import { useHazardStore } from './hazardStore';
 import { useNotificationStore } from './notificationStore';
-import { syncMessageToCloud, fetchRecentCloudMessages, syncPingToCloud, sendRemoteWebPush } from '../services/supabase';
+import { syncMessageToCloud, fetchRecentCloudMessages, syncPingToCloud, sendRemoteWebPush, initSupabaseRealtime } from '../services/supabase';
 
 // Ultra-compact SDP Minifier (reduces 1500+ byte WebRTC SDP down to ~150 bytes for ultra-fast QR scanning)
 function minifySDP(sdp, uid, name, type) {
@@ -183,6 +183,73 @@ export const useMeshStore = defineStore('mesh', {
         this.isP2PActive = true;
       }
 
+      // Initialize Supabase Realtime WebSocket for instantaneous cloud message delivery
+      initSupabaseRealtime({
+        onMessage: (msg) => {
+          if (!msg || !msg.id) return;
+          const authStore = useAuthStore();
+          const currentUserId = authStore.userId;
+
+          if (msg.senderId && msg.senderId !== currentUserId) {
+            this.registerOrUpdatePeerUser({
+              id: msg.senderId,
+              name: msg.senderName,
+              coords: msg.coords,
+              updatedAt: msg.timestamp
+            });
+          }
+
+          const exists = this.broadcasts.some(b => b.id === msg.id);
+          if (!exists) {
+            this.broadcasts.unshift(msg);
+            saveDBItem('broadcast_messages', msg).catch(() => {});
+            localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+
+            const isForMe = !msg.recipientId || msg.recipientId === currentUserId;
+            const isDirectMessage = Boolean(msg.recipientId);
+
+            if (msg.senderId !== currentUserId && isForMe) {
+              this.pushNotification({
+                type: 'broadcast',
+                title: isDirectMessage ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
+                message: msg.type === 'audio' ? 'Nota de voz recibida' : `"${msg.content}"`
+              });
+              const notifStore = useNotificationStore();
+              notifStore.notify({
+                type: 'broadcast',
+                title: isDirectMessage ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
+                body: msg.type === 'audio' ? 'Nota de voz de emergencia recibida' : (msg.content || 'Nuevo mensaje comunitario'),
+                id: msg.id,
+                tabToOpen: 'broadcast'
+              });
+            }
+          }
+        },
+        onPing: (ping) => {
+          if (!ping || !ping.userId) return;
+          const authStore = useAuthStore();
+          if (ping.userId !== authStore.userId) {
+            this.registerOrUpdatePeerUser({
+              id: ping.userId,
+              name: ping.userName,
+              status: ping.status,
+              coords: ping.coords,
+              updatedAt: ping.timestamp
+            });
+            if (ping.isPing) {
+              const notifStore = useNotificationStore();
+              notifStore.notify({
+                type: 'status',
+                title: `Ping de ${ping.userName}`,
+                body: `${ping.userName} reportó: "${ping.status || 'A salvo'}"`,
+                id: `ping_${ping.id}_${Date.now()}`,
+                tabToOpen: 'status'
+              });
+            }
+          }
+        }
+      });
+
       if (!this.pollInterval) {
         this.pollInterval = setInterval(async () => {
           // Prune closed / dead connections
@@ -207,6 +274,37 @@ export const useMeshStore = defineStore('mesh', {
                 }
               });
             }
+          }
+
+          // Continuous background cloud sync when online (catches any missed real-time packets)
+          if (navigator.onLine) {
+            fetchRecentCloudMessages(30).then(cloudMsgs => {
+              if (cloudMsgs && cloudMsgs.length > 0) {
+                let hasNew = false;
+                const currentUserId = authStore.userId;
+                cloudMsgs.forEach(msg => {
+                  const exists = this.broadcasts.some(b => b.id === msg.id);
+                  if (!exists) {
+                    this.broadcasts.unshift(msg);
+                    saveDBItem('broadcast_messages', msg).catch(() => {});
+                    hasNew = true;
+                    if (msg.senderId !== currentUserId && (!msg.recipientId || msg.recipientId === currentUserId)) {
+                      const notifStore = useNotificationStore();
+                      notifStore.notify({
+                        type: 'broadcast',
+                        title: msg.recipientId ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
+                        body: msg.type === 'audio' ? 'Nota de voz recibida' : msg.content,
+                        id: msg.id,
+                        tabToOpen: 'broadcast'
+                      });
+                    }
+                  }
+                });
+                if (hasNew) {
+                  localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+                }
+              }
+            }).catch(() => {});
           }
 
           // Proactively drain pending outbox if any open connection or online

@@ -1,5 +1,5 @@
 // Sálvate PWA — Background Push & Notification Service Worker
-// Enables notifications even when the app/browser is completely closed
+// Enables notifications and background seismic alerts even when the app/browser is completely closed
 
 self.addEventListener('push', (event) => {
   let data = {};
@@ -14,16 +14,19 @@ self.addEventListener('push', (event) => {
 
   const title = data.title || 'Sálvate • Alerta de Emergencia';
   const type = data.type || 'broadcast';
+  const isSeismic = type === 'seismic';
+
   const options = {
-    body: data.body || 'Alerta comunitaria recibida.',
+    body: data.body || (isSeismic ? 'Sismo registrado en Perú.' : 'Alerta comunitaria recibida.'),
     icon: '/pwa-192x192.png',
     badge: '/pwa-192x192.png',
-    vibrate: type === 'seismic' ? [300, 100, 300, 100, 400] : [200, 100, 200],
+    vibrate: isSeismic ? [500, 200, 500, 200, 700] : (type === 'status' ? [200, 100, 200] : [150, 80, 150]),
     tag: data.tag || `salvate-${type}-${Date.now()}`,
-    data: data.data || { url: '/', tab: data.tabToOpen || 'dashboard' },
-    requireInteraction: type === 'seismic' || type === 'status' || type === 'hazard',
+    data: data.data || { url: '/', tab: data.tabToOpen || (isSeismic ? 'seismic' : 'dashboard') },
+    requireInteraction: isSeismic || type === 'status' || type === 'hazard',
+    renotify: true,
     actions: [
-      { action: 'open', title: 'Ver Alerta' },
+      { action: 'open', title: isSeismic ? 'Ver Radar Sísmico' : 'Ver Mensaje' },
       { action: 'dismiss', title: 'Entendido' }
     ]
   };
@@ -65,11 +68,11 @@ self.addEventListener('periodicsync', (event) => {
         .then(res => res.json())
         .then(data => {
           if (!data || !data.features) return;
-          // Filter recent Peru bounding box earthquakes with magnitude >= 4.0
+          // Filter recent Peru bounding box earthquakes with magnitude >= 3.5
           const peruEvents = data.features.filter(f => {
             const [lng, lat] = f.geometry.coordinates;
             const mag = f.properties.mag;
-            return lat >= -18.5 && lat <= -0.03 && lng >= -81.5 && lng <= -68.5 && mag >= 4.0;
+            return lat >= -18.5 && lat <= -0.03 && lng >= -81.5 && lng <= -68.5 && mag >= 3.5;
           });
 
           if (peruEvents.length > 0) {
@@ -77,10 +80,10 @@ self.addEventListener('periodicsync', (event) => {
             const eventAge = Date.now() - newest.properties.time;
             if (eventAge < 15 * 60 * 1000) { // younger than 15 min
               return self.registration.showNotification(`🌋 Sismo Detectado M${newest.properties.mag.toFixed(1)}`, {
-                body: `${newest.properties.place} (IGP / USGS Oficial)`,
+                body: `${newest.properties.place} (Alerta de Emergencia Oficial)`,
                 icon: '/pwa-192x192.png',
                 badge: '/pwa-192x192.png',
-                vibrate: [300, 100, 300, 100, 400],
+                vibrate: [500, 200, 500, 200, 700],
                 tag: `seismic-${newest.id}`,
                 data: { tab: 'seismic' },
                 requireInteraction: true

@@ -157,6 +157,122 @@ export async function registerPushSubscription(userId, subscription) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. SUPABASE REALTIME WEBSOCKET LISTENER (Sub-100ms Instant Cloud Delivery)
+// ─────────────────────────────────────────────────────────────────────────────
+let realtimeSocket = null;
+let heartbeatTimer = null;
+let reconnectTimer = null;
+
+export function initSupabaseRealtime({ onMessage, onPing }) {
+  if (typeof window === 'undefined' || !window.WebSocket) return;
+  if (realtimeSocket && (realtimeSocket.readyState === WebSocket.OPEN || realtimeSocket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const wsUrl = `wss://vnwpudichitahnugxach.supabase.co/realtime/v1/websocket?apikey=${SUPABASE_ANON_KEY}&vsn=1.0.0`;
+
+  try {
+    realtimeSocket = new WebSocket(wsUrl);
+
+    realtimeSocket.onopen = () => {
+      // 1. Join salvate_messages channel
+      realtimeSocket.send(JSON.stringify({
+        topic: 'realtime:public:salvate_messages',
+        event: 'phx_join',
+        payload: {
+          config: {
+            postgres_changes: [
+              { event: 'INSERT', schema: 'public', table: 'salvate_messages' },
+              { event: 'UPDATE', schema: 'public', table: 'salvate_messages' }
+            ]
+          }
+        },
+        ref: 'join_msg'
+      }));
+
+      // 2. Join salvate_pings channel
+      realtimeSocket.send(JSON.stringify({
+        topic: 'realtime:public:salvate_pings',
+        event: 'phx_join',
+        payload: {
+          config: {
+            postgres_changes: [
+              { event: 'INSERT', schema: 'public', table: 'salvate_pings' }
+            ]
+          }
+        },
+        ref: 'join_ping'
+      }));
+
+      // Keepalive heartbeat
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        if (realtimeSocket && realtimeSocket.readyState === WebSocket.OPEN) {
+          realtimeSocket.send(JSON.stringify({
+            topic: 'phoenix',
+            event: 'heartbeat',
+            payload: {},
+            ref: 'hb_' + Date.now()
+          }));
+        }
+      }, 25000);
+    };
+
+    realtimeSocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event === 'postgres_changes') {
+          const record = data.payload?.data?.record;
+          const table = data.payload?.data?.table;
+
+          if (table === 'salvate_messages' && record && onMessage) {
+            onMessage({
+              id: record.id,
+              senderId: record.sender_id,
+              senderName: record.sender_name,
+              recipientId: record.recipient_id,
+              type: record.type,
+              content: record.content,
+              audioUrl: record.audio_url,
+              replyTo: record.reply_to,
+              reactions: record.reactions || {},
+              status: record.status,
+              coords: record.coords,
+              seq: Number(record.seq || 0),
+              timestamp: record.created_at
+            });
+          } else if (table === 'salvate_pings' && record && onPing) {
+            onPing({
+              id: record.id,
+              userId: record.user_id,
+              userName: record.user_name,
+              status: record.status,
+              coords: record.coords,
+              isPing: record.is_ping,
+              timestamp: record.created_at
+            });
+          }
+        }
+      } catch (e) {}
+    };
+
+    realtimeSocket.onclose = () => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (navigator.onLine) {
+        reconnectTimer = setTimeout(() => {
+          initSupabaseRealtime({ onMessage, onPing });
+        }, 3000);
+      }
+    };
+
+    realtimeSocket.onerror = () => {
+      try { realtimeSocket.close(); } catch (e) {}
+    };
+  } catch (e) {}
+}
+
 // Utility to convert VAPID base64 string to Uint8Array for PushManager
 export function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -168,3 +284,5 @@ export function urlBase64ToUint8Array(base64String) {
   }
   return outputArray;
 }
+
+

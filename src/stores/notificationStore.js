@@ -219,6 +219,17 @@ export const useNotificationStore = defineStore('notification', {
         };
 
         triggerNative().catch(() => {});
+
+        // Broadcast to all remote phones via Web Push if seismic or hazard alert
+        if (navigator.onLine && (type === 'seismic' || type === 'hazard')) {
+          sendRemoteWebPush({
+            title,
+            body,
+            type,
+            tabToOpen: tabToOpen || type,
+            tag: options.tag
+          }).catch(() => {});
+        }
       }
     },
 

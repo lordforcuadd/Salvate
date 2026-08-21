@@ -401,18 +401,24 @@ onMounted(async () => {
   if (authStore.isAuthenticated) {
     await meshStore.initMesh(authStore.user);
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      notificationStore.requestPermission();
+      notificationStore.requestPermission(authStore.user?.id);
     }
     await authStore.captureInitialLocation();
   }
   if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     notificationStore.permission = 'granted';
+    if (authStore.user) {
+      notificationStore.subscribeToWebPush(authStore.user.id);
+    }
   }
 });
 
 watch(() => authStore.isAuthenticated, async (isAuth) => {
   if (isAuth && authStore.user) {
     await meshStore.initMesh(authStore.user);
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      notificationStore.subscribeToWebPush(authStore.user.id);
+    }
   }
 });
 
