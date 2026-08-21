@@ -103,7 +103,10 @@ export const useMeshStore = defineStore('mesh', {
     async initMesh(currentUser = null) {
       if (!this._listenersRegistered) {
         this._listenersRegistered = true;
-        window.addEventListener('online', () => this.isOnlineMode = true);
+        window.addEventListener('online', () => {
+          this.isOnlineMode = true;
+          this.processOutboxQueue();
+        });
         window.addEventListener('offline', () => this.isOnlineMode = false);
 
         window.addEventListener('storage', (e) => {
@@ -468,6 +471,7 @@ export const useMeshStore = defineStore('mesh', {
                 payload: hazardStore.hazards.slice(0, 20)
               });
             }
+            this.processOutboxQueue();
           } catch (e) {}
         }
       };
@@ -810,7 +814,39 @@ export const useMeshStore = defineStore('mesh', {
       });
     },
 
-    async createBroadcast({ senderId, senderName, type, content, audioBlob = null, coords = null }) {
+    async processOutboxQueue() {
+      const pendingMessages = (this.broadcasts || []).filter(b => b.status === 'pending');
+      if (pendingMessages.length === 0) return;
+
+      const hasActiveConn = this.peerConnections.some(c => c && c.open);
+      const isOnline = navigator.onLine;
+
+      if (!hasActiveConn && !isOnline) return;
+
+      for (const msg of pendingMessages) {
+        msg.status = 'sent';
+        msg.synced = isOnline;
+        await saveDBItem('broadcast_messages', msg);
+
+        const gossipPayload = {
+          _msgId: `g_${msg.id}_${Date.now()}`,
+          type: 'GOSSIP_BROADCAST',
+          payload: msg
+        };
+
+        this.broadcastGossipLocally(gossipPayload);
+
+        this.peerConnections.forEach(conn => {
+          if (conn && conn.open) {
+            try { conn.send(gossipPayload); } catch (e) {}
+          }
+        });
+      }
+
+      localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+    },
+
+    async createBroadcast({ senderId, senderName, type = 'text', content = '', audioBlob = null, coords = null, recipientId = null, replyTo = null }) {
       let audioUrl = null;
       if (audioBlob) {
         audioUrl = await new Promise((resolve) => {
@@ -820,14 +856,25 @@ export const useMeshStore = defineStore('mesh', {
         });
       }
 
+      const hasActiveConnection = this.peerConnections.some(c => c && c.open) || navigator.onLine;
+
       const broadcastMsg = {
-        id: `broadcast-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         senderId,
         senderName,
-        type,
+        recipientId: recipientId || null,
+        type: type || 'text',
         content: content || (type === 'audio' ? 'Nota de voz de emergencia' : ''),
         audioUrl,
         coords,
+        replyTo: replyTo ? {
+          id: replyTo.id,
+          senderName: replyTo.senderName,
+          content: replyTo.content || (replyTo.type === 'audio' ? 'Nota de voz' : ''),
+          type: replyTo.type
+        } : null,
+        reactions: {},
+        status: hasActiveConnection ? 'sent' : 'pending',
         timestamp: new Date().toISOString(),
         synced: navigator.onLine,
         mode: navigator.onLine ? 'Nacional (Internet)' : 'Red P2P Malla (Offline)',
@@ -839,28 +886,117 @@ export const useMeshStore = defineStore('mesh', {
 
       localStorage.setItem('salvate_broadcast_update', Date.now().toString());
 
-      const gossipPayload = {
-        type: 'GOSSIP_BROADCAST',
-        payload: broadcastMsg
-      };
+      if (hasActiveConnection) {
+        const gossipPayload = {
+          _msgId: `g_${broadcastMsg.id}_${Date.now()}`,
+          type: 'GOSSIP_BROADCAST',
+          payload: broadcastMsg
+        };
 
-      this.broadcastGossipLocally(gossipPayload);
+        this.broadcastGossipLocally(gossipPayload);
 
-      this.peerConnections.forEach(conn => {
-        if (conn && conn.open) {
-          try {
-            conn.send(gossipPayload);
-          } catch (e) {}
-        }
-      });
+        this.peerConnections.forEach(conn => {
+          if (conn && conn.open) {
+            try {
+              conn.send(gossipPayload);
+            } catch (e) {}
+          }
+        });
+      }
 
       this.pushNotification({
         type: 'broadcast',
-        title: 'Mensaje Transmitido',
-        message: type === 'audio' ? 'Nota de voz enviada' : `"${content}"`
+        title: hasActiveConnection ? 'Mensaje Transmitido' : 'Mensaje en Cola Offline',
+        message: type === 'audio' ? 'Nota de voz grabada' : `"${content}"`
       });
 
       return broadcastMsg;
+    },
+
+    async toggleMessageReaction(messageId, emoji) {
+      const authStore = useAuthStore();
+      const currentUserId = authStore.userId;
+      if (!messageId || !emoji || !currentUserId) return;
+
+      const targetMsg = this.broadcasts.find(b => b.id === messageId);
+      if (targetMsg) {
+        if (!targetMsg.reactions) targetMsg.reactions = {};
+        if (!targetMsg.reactions[emoji]) targetMsg.reactions[emoji] = [];
+
+        const existingIdx = targetMsg.reactions[emoji].indexOf(currentUserId);
+        if (existingIdx >= 0) {
+          targetMsg.reactions[emoji].splice(existingIdx, 1);
+          if (targetMsg.reactions[emoji].length === 0) {
+            delete targetMsg.reactions[emoji];
+          }
+        } else {
+          // Remove user from other emoji reactions on this same message
+          Object.keys(targetMsg.reactions).forEach(k => {
+            targetMsg.reactions[k] = targetMsg.reactions[k].filter(id => id !== currentUserId);
+            if (targetMsg.reactions[k].length === 0) delete targetMsg.reactions[k];
+          });
+          if (!targetMsg.reactions[emoji]) targetMsg.reactions[emoji] = [];
+          targetMsg.reactions[emoji].push(currentUserId);
+        }
+
+        await saveDBItem('broadcast_messages', targetMsg);
+        localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+
+        const reactionPayload = {
+          _msgId: `react_${messageId}_${currentUserId}_${Date.now()}`,
+          type: 'MESSAGE_REACTION',
+          messageId,
+          emoji,
+          userId: currentUserId,
+          userName: authStore.userName
+        };
+
+        this.broadcastGossipLocally(reactionPayload);
+        this.peerConnections.forEach(conn => {
+          if (conn && conn.open) {
+            try { conn.send(reactionPayload); } catch (e) {}
+          }
+        });
+      }
+    },
+
+    async markMessagesAsRead(peerUserId = null) {
+      const authStore = useAuthStore();
+      const currentUserId = authStore.userId;
+      if (!currentUserId) return;
+
+      let changed = false;
+      const unreadMsgs = this.broadcasts.filter(b => 
+        b.senderId !== currentUserId && 
+        b.status !== 'read' &&
+        (!peerUserId || b.senderId === peerUserId || b.recipientId === peerUserId)
+      );
+
+      for (const msg of unreadMsgs) {
+        msg.status = 'read';
+        changed = true;
+        await saveDBItem('broadcast_messages', msg);
+
+        const readAckPayload = {
+          _msgId: `read_${msg.id}_${currentUserId}_${Date.now()}`,
+          type: 'MESSAGE_ACK',
+          messageId: msg.id,
+          status: 'read',
+          ackBy: currentUserId,
+          ackByName: authStore.userName
+        };
+
+        this.broadcastGossipLocally(readAckPayload);
+        this.peerConnections.forEach(conn => {
+          if (conn && conn.open) {
+            try { conn.send(readAckPayload); } catch (e) {}
+          }
+        });
+      }
+
+      if (changed) {
+        localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+      }
     },
 
     async handleIncomingGossip(data) {
@@ -1043,6 +1179,23 @@ export const useMeshStore = defineStore('mesh', {
           localStorage.setItem('salvate_broadcast_update', Date.now().toString());
 
           if (msg.senderId !== currentUserId) {
+            // Immediate delivery ACK
+            const ackPayload = {
+              _msgId: `ack_${msg.id}_${currentUserId}_${Date.now()}`,
+              type: 'MESSAGE_ACK',
+              messageId: msg.id,
+              status: 'delivered',
+              ackBy: currentUserId,
+              ackByName: authStore.userName
+            };
+
+            this.broadcastGossipLocally(ackPayload);
+            this.peerConnections.forEach(conn => {
+              if (conn && conn.open) {
+                try { conn.send(ackPayload); } catch (e) {}
+              }
+            });
+
             this.pushNotification({
               type: 'broadcast',
               title: `Mensaje de ${msg.senderName}`,
@@ -1073,6 +1226,53 @@ export const useMeshStore = defineStore('mesh', {
               } catch (e) {}
             }
           });
+        }
+        return;
+      }
+
+      if (data.type === 'MESSAGE_ACK') {
+        const { messageId, status } = data;
+        if (!messageId || !status) return;
+
+        const targetMsg = this.broadcasts.find(b => b.id === messageId);
+        if (targetMsg && targetMsg.senderId === currentUserId) {
+          if (status === 'read') {
+            targetMsg.status = 'read';
+          } else if (status === 'delivered' && targetMsg.status !== 'read') {
+            targetMsg.status = 'delivered';
+          }
+          await saveDBItem('broadcast_messages', targetMsg);
+          localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+        }
+        return;
+      }
+
+      if (data.type === 'MESSAGE_REACTION') {
+        const { messageId, emoji, userId } = data;
+        if (!messageId || !emoji || !userId) return;
+
+        const targetMsg = this.broadcasts.find(b => b.id === messageId);
+        if (targetMsg) {
+          if (!targetMsg.reactions) targetMsg.reactions = {};
+          if (!targetMsg.reactions[emoji]) targetMsg.reactions[emoji] = [];
+
+          const existingIdx = targetMsg.reactions[emoji].indexOf(userId);
+          if (existingIdx >= 0) {
+            targetMsg.reactions[emoji].splice(existingIdx, 1);
+            if (targetMsg.reactions[emoji].length === 0) {
+              delete targetMsg.reactions[emoji];
+            }
+          } else {
+            Object.keys(targetMsg.reactions).forEach(k => {
+              targetMsg.reactions[k] = targetMsg.reactions[k].filter(id => id !== userId);
+              if (targetMsg.reactions[k].length === 0) delete targetMsg.reactions[k];
+            });
+            if (!targetMsg.reactions[emoji]) targetMsg.reactions[emoji] = [];
+            targetMsg.reactions[emoji].push(userId);
+          }
+
+          await saveDBItem('broadcast_messages', targetMsg);
+          localStorage.setItem('salvate_broadcast_update', Date.now().toString());
         }
         return;
       }
