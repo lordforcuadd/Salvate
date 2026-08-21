@@ -64,6 +64,19 @@ export const useNotificationStore = defineStore('notification', {
       try {
         const result = await Notification.requestPermission();
         this.permission = result;
+        if (result === 'granted') {
+          // Register Periodic Background Sync if available on device (PWA background worker)
+          if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+            try {
+              const reg = await navigator.serviceWorker.ready;
+              if ('periodicSync' in reg) {
+                await reg.periodicSync.register('check-seismic-alerts', {
+                  minInterval: 15 * 60 * 1000 // 15 minutes
+                });
+              }
+            } catch (e) {}
+          }
+        }
         return result;
       } catch (err) {
         return 'denied';
@@ -120,7 +133,9 @@ export const useNotificationStore = defineStore('notification', {
       if (this.vibrationEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
           if (type === 'seismic') {
-            navigator.vibrate([200, 100, 200, 100, 300]);
+            navigator.vibrate([300, 100, 300, 100, 400]);
+          } else if (type === 'status') {
+            navigator.vibrate([200, 100, 200]);
           } else {
             navigator.vibrate([150, 80, 150]);
           }
@@ -134,8 +149,9 @@ export const useNotificationStore = defineStore('notification', {
           icon: '/pwa-192x192.png',
           badge: '/pwa-192x192.png',
           tag: tag || `salvate-${type}-${Date.now()}`,
-          vibrate: type === 'seismic' ? [200, 100, 200, 100, 300] : [150, 80, 150],
+          vibrate: type === 'seismic' ? [300, 100, 300, 100, 400] : [200, 100, 200],
           data: { tab: tabToOpen || type, timestamp: Date.now() },
+          requireInteraction: type === 'seismic' || type === 'status' || type === 'hazard',
           renotify: true
         };
 

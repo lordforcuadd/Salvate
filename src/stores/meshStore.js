@@ -812,6 +812,15 @@ export const useMeshStore = defineStore('mesh', {
         title: 'Reporte Registrado',
         message: `Tu estado "${updatedUser.status}" se ha guardado en la red.`
       });
+
+      const notifStore = useNotificationStore();
+      notifStore.notify({
+        type: 'status',
+        title: 'Reporte Registrado',
+        body: `Tu estado "${updatedUser.status}" se ha emitido a la red comunitaria.`,
+        id: `my_status_${Date.now()}`,
+        tabToOpen: 'status'
+      });
     },
 
     async processOutboxQueue() {
@@ -1138,6 +1147,15 @@ export const useMeshStore = defineStore('mesh', {
               status: peer.status || 'A salvo',
               title: `Estado de ${peer.name}`,
               message: `Cambió su estado a: "${peer.status || 'A salvo'}"`
+            });
+
+            const notifStore = useNotificationStore();
+            notifStore.notify({
+              type: 'status',
+              title: `Estado de ${peer.name}`,
+              body: `${peer.name} reportó: "${peer.status || 'A salvo'}"`,
+              id: `peer_status_${peer.id}_${peer.updatedAt || Date.now()}`,
+              tabToOpen: 'status'
             });
           }
 
