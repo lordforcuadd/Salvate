@@ -105,6 +105,11 @@ export const useMeshStore = defineStore('mesh', {
         this._listenersRegistered = true;
         window.addEventListener('online', () => {
           this.isOnlineMode = true;
+          const authStore = useAuthStore();
+          if (authStore.user) {
+            this.setupWebRTCPeer(authStore.user);
+            this.announceSelfToKnownPeers(authStore.user);
+          }
           this.processOutboxQueue();
         });
         window.addEventListener('offline', () => this.isOnlineMode = false);
@@ -161,7 +166,13 @@ export const useMeshStore = defineStore('mesh', {
               });
             }
           }
-        }, 3000);
+
+          // Proactively drain pending outbox if any open connection or online
+          const hasPending = (this.broadcasts || []).some(b => b.status === 'pending');
+          if (hasPending && (this.peerConnections.some(c => c && c.open) || navigator.onLine)) {
+            this.processOutboxQueue();
+          }
+        }, 2000);
       }
 
       if (typeof document !== 'undefined' && !this._resumeListenersAttached) {
@@ -1399,14 +1410,48 @@ export const useMeshStore = defineStore('mesh', {
 
           const exists = this.broadcasts.some(b => b.id === msg.id);
           if (!exists) {
-            this.broadcasts.push(msg);
+            this.broadcasts.unshift(msg);
             saveDBItem('broadcast_messages', msg).catch(() => {});
             hasNew = true;
+
+            const isForMe = !msg.recipientId || msg.recipientId === currentUserId;
+            const isDirectMessage = Boolean(msg.recipientId);
+
+            if (msg.senderId !== currentUserId && isForMe) {
+              const ackPayload = {
+                _msgId: `ack_${msg.id}_${currentUserId}_${Date.now()}`,
+                type: 'MESSAGE_ACK',
+                messageId: msg.id,
+                status: 'delivered',
+                ackBy: currentUserId,
+                ackByName: authStore.userName
+              };
+
+              this.broadcastGossipLocally(ackPayload);
+              this.peerConnections.forEach(conn => {
+                if (conn && conn.open) {
+                  try { conn.send(ackPayload); } catch (e) {}
+                }
+              });
+
+              this.pushNotification({
+                type: 'broadcast',
+                title: isDirectMessage ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
+                message: msg.type === 'audio' ? 'Nota de voz recibida' : `"${msg.content}"`
+              });
+              const notifStore = useNotificationStore();
+              notifStore.notify({
+                type: 'broadcast',
+                title: isDirectMessage ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
+                body: msg.type === 'audio' ? 'Nota de voz de emergencia recibida' : (msg.content || 'Nuevo mensaje comunitario'),
+                id: msg.id,
+                tabToOpen: 'broadcast'
+              });
+            }
           }
         }
 
         if (hasNew) {
-          this.broadcasts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           localStorage.setItem('salvate_broadcast_update', Date.now().toString());
         }
         return;
