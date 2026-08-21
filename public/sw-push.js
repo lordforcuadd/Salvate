@@ -1,5 +1,5 @@
 // Sálvate PWA — Background Push & Notification Service Worker
-// Enables background push and seismic alerts when closed without duplicate banners
+// Enables background push and seismic alerts when closed with sound, vibration, and screen-wake priority
 
 self.addEventListener('push', (event) => {
   let data = {};
@@ -15,7 +15,7 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Sálvate • Alerta de Emergencia';
   const type = data.type || 'broadcast';
   const isSeismic = type === 'seismic';
-  const notifTag = data.tag || `salvate-${type}-${data.id || 'event'}`;
+  const notifTag = data.tag || `salvate-${type}-${data.id || Date.now()}`;
 
   const mag = Number(data.mag || data.magnitude || (data.data && (data.data.mag || data.data.magnitude)) || 4.0);
   let seismicVibration = [350, 150, 350];
@@ -32,8 +32,10 @@ self.addEventListener('push', (event) => {
     vibrate: isSeismic ? seismicVibration : (type === 'status' ? [200, 100, 200] : [150, 80, 150]),
     tag: notifTag,
     data: data.data || { url: '/', tab: data.tabToOpen || (isSeismic ? 'seismic' : 'dashboard'), mag },
-    requireInteraction: isSeismic || type === 'status' || type === 'hazard',
-    renotify: false,
+    requireInteraction: true,
+    renotify: true,
+    silent: false,
+    timestamp: Date.now(),
     actions: [
       { action: 'open', title: isSeismic ? 'Ver Radar Sísmico' : 'Ver Mensaje' },
       { action: 'dismiss', title: 'Entendido' }
@@ -110,7 +112,9 @@ self.addEventListener('periodicsync', (event) => {
                 tag: `seismic-${newest.id}`,
                 data: { tab: 'seismic', mag },
                 requireInteraction: true,
-                renotify: false
+                renotify: true,
+                silent: false,
+                timestamp: Date.now()
               });
             }
           }
