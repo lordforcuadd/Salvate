@@ -141,35 +141,47 @@ export const useMeshStore = defineStore('mesh', {
 
           await this.reloadFromDB();
 
-          // Auto-reconnect with known contacts if disconnected
+          // Auto-recover PeerJS instance and reconnect with known contacts
           const authStore = useAuthStore();
-          if (authStore.user && this.peerInstance && !this.peerInstance.destroyed && !this.peerInstance.disconnected) {
-            this.users.forEach(u => {
-              if (u.id !== authStore.user.id) {
-                const cleanTargetId = u.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-                const isAlreadyConnected = this.peerConnections.some(c => c.peer === cleanTargetId && c.open);
-                if (!isAlreadyConnected) {
-                  this.connectToPeer(cleanTargetId, authStore.user);
+          if (authStore.user && (navigator.onLine || this.signalingServer?.isCustom)) {
+            if (!this.peerInstance || this.peerInstance.destroyed || this.peerInstance.disconnected) {
+              this.setupWebRTCPeer(authStore.user);
+            } else {
+              this.users.forEach(u => {
+                if (u.id !== authStore.user.id) {
+                  const cleanTargetId = u.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+                  const isAlreadyConnected = this.peerConnections.some(c => c.peer === cleanTargetId && c.open);
+                  if (!isAlreadyConnected) {
+                    this.connectToPeer(cleanTargetId, authStore.user);
+                  }
                 }
-              }
-            });
+              });
+            }
           }
-        }, 4000);
+        }, 3000);
       }
 
-      if (typeof document !== 'undefined') {
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') {
-            this.reloadFromDB();
-            const authStore = useAuthStore();
-            if (authStore.user) {
-              if (this.peerInstance && !this.peerInstance.destroyed && this.peerInstance.disconnected) {
-                try { this.peerInstance.reconnect(); } catch (e) {}
-              }
+      if (typeof document !== 'undefined' && !this._resumeListenersAttached) {
+        this._resumeListenersAttached = true;
+        const handleAppResume = () => {
+          this.reloadFromDB();
+          const authStore = useAuthStore();
+          if (authStore.user) {
+            if (!this.peerInstance || this.peerInstance.destroyed || this.peerInstance.disconnected) {
+              this.setupWebRTCPeer(authStore.user);
+            } else {
               this.announceSelfToKnownPeers(authStore.user);
             }
           }
+        };
+
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            handleAppResume();
+          }
         });
+        window.addEventListener('focus', handleAppResume);
+        window.addEventListener('pageshow', handleAppResume);
       }
 
       if (currentUser && currentUser.id) {
@@ -318,18 +330,13 @@ export const useMeshStore = defineStore('mesh', {
         });
 
         this.peerInstance.on('disconnected', () => {
-          if (this.peerInstance && !this.peerInstance.destroyed) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = setTimeout(() => {
-              try {
-                if (this.peerInstance && this.peerInstance.disconnected) {
-                  if (navigator.onLine || this.signalingServer?.isCustom) {
-                    this.peerInstance.reconnect();
-                  }
-                }
-              } catch (e) {}
-            }, 10000);
-          }
+          this.isP2PActive = false;
+          clearTimeout(this.reconnectTimeout);
+          this.reconnectTimeout = setTimeout(() => {
+            if (navigator.onLine || this.signalingServer?.isCustom) {
+              this.setupWebRTCPeer(currentUser);
+            }
+          }, 3000);
         });
 
         this.peerInstance.on('connection', (conn) => {
@@ -338,16 +345,13 @@ export const useMeshStore = defineStore('mesh', {
 
         this.peerInstance.on('error', (err) => {
           if (err.type === 'peer-unavailable') return;
-          if (err.type === 'network' || err.type === 'disconnected' || err.type === 'server-error' || err.type === 'socket-error') {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = setTimeout(() => {
-              if (this.peerInstance && !this.peerInstance.destroyed && this.peerInstance.disconnected) {
-                if (navigator.onLine || this.signalingServer?.isCustom) {
-                  try { this.peerInstance.reconnect(); } catch (e) {}
-                }
-              }
-            }, 15000);
-          }
+          this.isP2PActive = false;
+          clearTimeout(this.reconnectTimeout);
+          this.reconnectTimeout = setTimeout(() => {
+            if (navigator.onLine || this.signalingServer?.isCustom) {
+              this.setupWebRTCPeer(currentUser);
+            }
+          }, 3000);
         });
 
       } catch (e) {
@@ -368,22 +372,24 @@ export const useMeshStore = defineStore('mesh', {
 
     connectToPeer(targetPeerId, currentUser) {
       if (!this.peerInstance || this.peerInstance.destroyed || !targetPeerId) return;
+      if (this.peerInstance.disconnected) {
+        this.setupWebRTCPeer(currentUser);
+        return;
+      }
       try {
         const cleanTarget = targetPeerId.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const openConn = this.peerConnections.find(c => c.peer === cleanTarget && c.open);
+        if (openConn) return;
+
         const conn = this.peerInstance.connect(cleanTarget, { reliable: true });
+        if (!conn) return;
+
         conn.on('open', () => {
           this.registerDataConnection(conn, currentUser);
-          if (conn.open && currentUser) {
-            try {
-              conn.send({
-                type: 'STATUS_UPDATE',
-                payload: currentUser
-              });
-              conn.send({
-                type: 'REQUEST_STATUS'
-              });
-            } catch (e) {}
-          }
+        });
+        conn.on('error', () => {
+          this.peerConnections = this.peerConnections.filter(c => c.peer !== cleanTarget);
+          this.activePeersCount = this.peerConnections.length;
         });
       } catch (e) {}
     },
@@ -847,6 +853,7 @@ export const useMeshStore = defineStore('mesh', {
       if (data.type === 'LINK_PEER') {
         const sender = data.sender;
         if (sender && sender.id !== currentUserId) {
+          const isBrandNew = !this.users.some(u => u.id === sender.id);
           await this.registerOrUpdatePeerUser(sender);
           this.connectToPeer(sender.id, authStore.user);
 
@@ -868,7 +875,7 @@ export const useMeshStore = defineStore('mesh', {
             const replyPayload = {
               type: 'STATUS_UPDATE',
               payload: authStore.user,
-              isPing: true
+              isPing: false
             };
 
             this.broadcastGossipLocally(replyPayload);
@@ -880,12 +887,14 @@ export const useMeshStore = defineStore('mesh', {
             });
           }
 
-          this.pushNotification({
-            type: 'status',
-            status: sender.status || 'A salvo',
-            title: 'Contacto Vinculado',
-            message: `${sender.name} se ha vinculado a tu red de emergencia.`
-          });
+          if (isBrandNew) {
+            this.pushNotification({
+              type: 'status',
+              status: sender.status || 'A salvo',
+              title: 'Contacto Vinculado',
+              message: `${sender.name} se ha vinculado a tu red de emergencia.`
+            });
+          }
         }
         return;
       }
@@ -913,6 +922,11 @@ export const useMeshStore = defineStore('mesh', {
         const peer = data.payload;
 
         if (peer && peer.id !== currentUserId) {
+          const existingUser = this.users.find(u => u.id === peer.id);
+          const previousStatus = existingUser?.status;
+          const statusChanged = previousStatus && previousStatus !== peer.status;
+          const isExplicitSOS = data.isPing && peer.status === 'Requiere ayuda';
+
           await this.registerOrUpdatePeerUser(peer);
 
           const historyEntry = {
@@ -930,12 +944,15 @@ export const useMeshStore = defineStore('mesh', {
             await saveDBItem('status_history', historyEntry);
           }
 
-          this.pushNotification({
-            type: 'status',
-            status: peer.status || 'A salvo',
-            title: `Estado: ${peer.name}`,
-            message: `Reporta: "${peer.status || 'A salvo'}"`
-          });
+          // Only alert user if status genuinely changed or on emergency SOS ping
+          if (statusChanged || isExplicitSOS) {
+            this.pushNotification({
+              type: 'status',
+              status: peer.status || 'A salvo',
+              title: `Estado de ${peer.name}`,
+              message: `Cambió su estado a: "${peer.status || 'A salvo'}"`
+            });
+          }
 
           this.peerConnections.forEach(conn => {
             if (conn && conn.open && conn.peer !== peer.id) {
