@@ -91,7 +91,8 @@ export const useMeshStore = defineStore('mesh', {
       '{"isCustom":false,"host":"0.peerjs.com","port":443,"path":"/","secure":true}'
     ),
     // Transient pending negotiation handle (isolated from established mesh peerConnections)
-    pendingNegotiationPC: null
+    pendingNegotiationPC: null,
+    processedMessageIds: new Set()
   }),
 
   getters: {
@@ -187,6 +188,12 @@ export const useMeshStore = defineStore('mesh', {
       initSupabaseRealtime({
         onMessage: (msg) => {
           if (!msg || !msg.id) return;
+          const authStore = useAuthStore();
+          const currentUserId = authStore.userId;
+
+          if (this.processedMessageIds.has(msg.id)) return;
+          this.processedMessageIds.add(msg.id);
+
           const isExisting = this.users.some(u => u.id === msg.senderId);
           if (msg.senderId && msg.senderId !== currentUserId && (isExisting || msg.recipientId === currentUserId)) {
             this.registerOrUpdatePeerUser({
@@ -227,6 +234,10 @@ export const useMeshStore = defineStore('mesh', {
           if (!ping || !ping.userId) return;
           const authStore = useAuthStore();
           if (ping.userId !== authStore.userId) {
+            const pingKey = `ping_${ping.userId}_${ping.timestamp || ping.id || ''}`;
+            if (this.processedMessageIds.has(pingKey)) return;
+            this.processedMessageIds.add(pingKey);
+
             this.registerOrUpdatePeerUser({
               id: ping.userId,
               name: ping.userName,
@@ -240,7 +251,7 @@ export const useMeshStore = defineStore('mesh', {
                 type: 'status',
                 title: `Ping de ${ping.userName}`,
                 body: `${ping.userName} reportó: "${ping.status || 'A salvo'}"`,
-                id: `ping_${ping.id}_${Date.now()}`,
+                id: pingKey,
                 tabToOpen: 'status'
               });
             }
@@ -281,6 +292,9 @@ export const useMeshStore = defineStore('mesh', {
                 let hasNew = false;
                 const currentUserId = authStore.userId;
                 cloudMsgs.forEach(msg => {
+                  if (this.processedMessageIds.has(msg.id)) return;
+                  this.processedMessageIds.add(msg.id);
+
                   const exists = this.broadcasts.some(b => b.id === msg.id);
                   if (!exists) {
                     this.broadcasts.unshift(msg);
@@ -980,7 +994,8 @@ export const useMeshStore = defineStore('mesh', {
           body: `${updatedUser.name} reportó su estado: "${updatedUser.status}"`,
           type: 'status',
           tabToOpen: 'status',
-          senderId: updatedUser.id
+          senderId: updatedUser.id,
+          id: `ping_${updatedUser.id}`
         }).catch(() => {});
       }
 
@@ -991,15 +1006,6 @@ export const useMeshStore = defineStore('mesh', {
         status: updatedUser.status,
         title: 'Reporte Registrado',
         message: `Tu estado "${updatedUser.status}" se ha guardado en la red.`
-      });
-
-      const notifStore = useNotificationStore();
-      notifStore.notify({
-        type: 'status',
-        title: 'Reporte Registrado',
-        body: `Tu estado "${updatedUser.status}" se ha emitido a la red comunitaria.`,
-        id: `my_status_${Date.now()}`,
-        tabToOpen: 'status'
       });
     },
 
@@ -1041,7 +1047,8 @@ export const useMeshStore = defineStore('mesh', {
             type: 'broadcast',
             tabToOpen: 'broadcast',
             recipientId: msg.recipientId,
-            senderId: msg.senderId
+            senderId: msg.senderId,
+            id: msg.id
           }).catch(() => {});
         }
 
@@ -1124,7 +1131,8 @@ export const useMeshStore = defineStore('mesh', {
           type: 'broadcast',
           tabToOpen: 'broadcast',
           recipientId: broadcastMsg.recipientId,
-          senderId: broadcastMsg.senderId
+          senderId: broadcastMsg.senderId,
+          id: broadcastMsg.id
         }).catch(() => {});
       }
 
@@ -1352,22 +1360,27 @@ export const useMeshStore = defineStore('mesh', {
           if (statusChanged || isPing || isExplicitSOS) {
             const title = isExplicitSOS ? `¡SOS de ${peer.name}!` : (isPing ? `Ping de ${peer.name}` : `Estado de ${peer.name}`);
             const message = isPing ? `Reporte en vivo: "${peer.status || 'A salvo'}"` : `Cambió su estado a: "${peer.status || 'A salvo'}"`;
+            const pingKey = `peer_ping_${peer.id}_${peer.updatedAt || ''}`;
 
-            this.pushNotification({
-              type: 'status',
-              status: peer.status || 'A salvo',
-              title,
-              message
-            });
+            if (!this.processedMessageIds.has(pingKey)) {
+              this.processedMessageIds.add(pingKey);
 
-            const notifStore = useNotificationStore();
-            notifStore.notify({
-              type: 'status',
-              title,
-              body: `${peer.name} reportó: "${peer.status || 'A salvo'}"`,
-              id: `peer_ping_${peer.id}_${Date.now()}`,
-              tabToOpen: 'status'
-            });
+              this.pushNotification({
+                type: 'status',
+                status: peer.status || 'A salvo',
+                title,
+                message
+              });
+
+              const notifStore = useNotificationStore();
+              notifStore.notify({
+                type: 'status',
+                title,
+                body: `${peer.name} reportó: "${peer.status || 'A salvo'}"`,
+                id: pingKey,
+                tabToOpen: 'status'
+              });
+            }
           }
 
           this.peerConnections.forEach(conn => {
@@ -1388,6 +1401,9 @@ export const useMeshStore = defineStore('mesh', {
       if (data.type === 'GOSSIP_BROADCAST') {
         const msg = data.payload;
         if (!msg || !msg.id) return;
+
+        if (this.processedMessageIds.has(msg.id)) return;
+        this.processedMessageIds.add(msg.id);
 
         // Only update contact record if already in contacts or if private direct message
         const isExisting = this.users.some(u => u.id === msg.senderId);
@@ -1599,6 +1615,9 @@ export const useMeshStore = defineStore('mesh', {
 
         for (const msg of list) {
           if (!msg || !msg.id) continue;
+          if (this.processedMessageIds.has(msg.id)) continue;
+          this.processedMessageIds.add(msg.id);
+
           const isExisting = this.users.some(u => u.id === msg.senderId);
           if (msg.senderId && msg.senderId !== currentUserId && (isExisting || msg.recipientId === currentUserId)) {
             this.registerOrUpdatePeerUser({

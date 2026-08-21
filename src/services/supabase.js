@@ -105,7 +105,7 @@ export async function syncPingToCloud(ping) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. REMOTE WEB PUSH NOTIFICATIONS DISPATCH
 // ─────────────────────────────────────────────────────────────────────────────
-export async function sendRemoteWebPush({ title, body, type = 'broadcast', tabToOpen = 'dashboard', recipientId = null, senderId = null }) {
+export async function sendRemoteWebPush({ title, body, type = 'broadcast', tabToOpen = 'dashboard', recipientId = null, senderId = null, tag = null, id = null }) {
   if (!navigator.onLine) return false;
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
@@ -121,7 +121,8 @@ export async function sendRemoteWebPush({ title, body, type = 'broadcast', tabTo
         type,
         tabToOpen,
         recipientId,
-        senderId
+        senderId,
+        tag: tag || (id ? `salvate-${type}-${id}` : `salvate-${type}`)
       })
     });
     return res.ok;

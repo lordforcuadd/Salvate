@@ -235,19 +235,18 @@ export const useNotificationStore = defineStore('notification', {
     },
 
     async notify({ type = 'broadcast', title, body, tag, id, tabToOpen = null }) {
-      // Prevent duplicate notification for identical event ID
-      if (id && this.notifiedEventIds.includes(id)) {
+      // Prevent duplicate notification for identical event ID or content
+      const eventKey = id || tag || `${type}_${title}_${body}`;
+      if (this.notifiedEventIds.includes(eventKey)) {
         return;
       }
-      if (id) {
-        this.notifiedEventIds.push(id);
-        if (this.notifiedEventIds.length > 50) {
-          this.notifiedEventIds.shift();
-        }
-        try {
-          localStorage.setItem('salvate_notified_events', JSON.stringify(this.notifiedEventIds));
-        } catch (e) {}
+      this.notifiedEventIds.push(eventKey);
+      if (this.notifiedEventIds.length > 100) {
+        this.notifiedEventIds.shift();
       }
+      try {
+        localStorage.setItem('salvate_notified_events', JSON.stringify(this.notifiedEventIds));
+      } catch (e) {}
 
       // Increment badge counters
       if (type === 'broadcast') this.unreadBroadcasts++;
@@ -274,17 +273,18 @@ export const useNotificationStore = defineStore('notification', {
         } catch (e) {}
       }
 
-      // Native System Push / Web Notification (Always fires in foreground & background)
+      // Native System Push / Web Notification (Deterministic tag avoids duplicates in OS shade)
       if (typeof Notification !== 'undefined') {
+        const notifTag = tag || `salvate-${type}-${id || 'event'}`;
         const options = {
           body,
           icon: '/pwa-192x192.png',
           badge: '/pwa-192x192.png',
-          tag: tag || `salvate-${type}-${id || Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          vibrate: type === 'seismic' ? [300, 100, 300, 100, 400] : [200, 100, 200],
+          tag: notifTag,
+          vibrate: type === 'seismic' ? [500, 200, 500, 200, 700] : [200, 100, 200],
           data: { tab: tabToOpen || type, timestamp: Date.now() },
           requireInteraction: type === 'seismic' || type === 'status' || type === 'hazard',
-          renotify: true
+          renotify: false
         };
 
         const triggerNative = async () => {

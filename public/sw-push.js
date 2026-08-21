@@ -1,5 +1,5 @@
 // Sálvate PWA — Background Push & Notification Service Worker
-// Enables notifications and background seismic alerts even when the app/browser is completely closed
+// Enables background push and seismic alerts when closed without duplicate banners
 
 self.addEventListener('push', (event) => {
   let data = {};
@@ -15,23 +15,33 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Sálvate • Alerta de Emergencia';
   const type = data.type || 'broadcast';
   const isSeismic = type === 'seismic';
+  const notifTag = data.tag || `salvate-${type}-${data.id || 'event'}`;
 
   const options = {
     body: data.body || (isSeismic ? 'Sismo registrado en Perú.' : 'Alerta comunitaria recibida.'),
     icon: '/pwa-192x192.png',
     badge: '/pwa-192x192.png',
     vibrate: isSeismic ? [500, 200, 500, 200, 700] : (type === 'status' ? [200, 100, 200] : [150, 80, 150]),
-    tag: data.tag || `salvate-${type}-${Date.now()}`,
+    tag: notifTag,
     data: data.data || { url: '/', tab: data.tabToOpen || (isSeismic ? 'seismic' : 'dashboard') },
     requireInteraction: isSeismic || type === 'status' || type === 'hazard',
-    renotify: true,
+    renotify: false,
     actions: [
       { action: 'open', title: isSeismic ? 'Ver Radar Sísmico' : 'Ver Mensaje' },
       { action: 'dismiss', title: 'Entendido' }
     ]
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const hasFocusedClient = clientList.some(c => c.focused);
+      // Suppress duplicate OS banner if app is currently focused in foreground (except critical seismic alarms)
+      if (hasFocusedClient && !isSeismic) {
+        return;
+      }
+      return self.registration.showNotification(title, options);
+    })
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -78,7 +88,7 @@ self.addEventListener('periodicsync', (event) => {
           if (peruEvents.length > 0) {
             const newest = peruEvents[0];
             const eventAge = Date.now() - newest.properties.time;
-            if (eventAge < 15 * 60 * 1000) { // younger than 15 min
+            if (eventAge < 15 * 60 * 1000) {
               return self.registration.showNotification(`🌋 Sismo Detectado M${newest.properties.mag.toFixed(1)}`, {
                 body: `${newest.properties.place} (Alerta de Emergencia Oficial)`,
                 icon: '/pwa-192x192.png',
@@ -86,7 +96,8 @@ self.addEventListener('periodicsync', (event) => {
                 vibrate: [500, 200, 500, 200, 700],
                 tag: `seismic-${newest.id}`,
                 data: { tab: 'seismic' },
-                requireInteraction: true
+                requireInteraction: true,
+                renotify: false
               });
             }
           }
