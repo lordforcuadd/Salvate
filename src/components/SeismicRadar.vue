@@ -422,6 +422,10 @@ const initMap = () => {
       userMarker = null;
     }
 
+    if (mapElement._leaflet_id) {
+      delete mapElement._leaflet_id;
+    }
+
     const defaultLat = authStore.userCoords?.lat || -12.046374;
     const defaultLng = authStore.userCoords?.lng || -77.042793;
 

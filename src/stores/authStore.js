@@ -49,32 +49,51 @@ export const useAuthStore = defineStore('auth', {
 
     async captureInitialLocation() {
       if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
-      return new Promise((resolve) => {
+      if (this._locPromise) return this._locPromise;
+
+      this._locPromise = new Promise((resolve) => {
+        const onSuccess = (pos) => {
+          const freshCoords = {
+            lat: Number(pos.coords.latitude.toFixed(6)),
+            lng: Number(pos.coords.longitude.toFixed(6)),
+            accuracy: Math.round(pos.coords.accuracy || 0)
+          };
+          this.setUserCoords(freshCoords);
+          try {
+            const seismicStore = useSeismicStore();
+            seismicStore.updateUserCoordsAndRecalculate(freshCoords);
+          } catch (e) {}
+          this._locPromise = null;
+          resolve(freshCoords);
+        };
+
+        const tryLowAccuracy = () => {
+          navigator.geolocation.getCurrentPosition(
+            onSuccess,
+            () => {
+              this._locPromise = null;
+              resolve(null);
+            },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+          );
+        };
+
         navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const freshCoords = {
-              lat: Number(pos.coords.latitude.toFixed(6)),
-              lng: Number(pos.coords.longitude.toFixed(6)),
-              accuracy: Math.round(pos.coords.accuracy || 0)
-            };
-            this.setUserCoords(freshCoords);
-            try {
-              const seismicStore = useSeismicStore();
-              seismicStore.updateUserCoordsAndRecalculate(freshCoords);
-            } catch (e) {}
-            resolve(freshCoords);
-          },
+          onSuccess,
           (err) => {
-            console.warn('Geolocation capture:', err);
-            resolve(null);
+            if (err.code === 3) {
+              // High accuracy timed out, fallback to low accuracy / wifi / cell tower triangulation immediately
+              tryLowAccuracy();
+            } else {
+              this._locPromise = null;
+              resolve(null);
+            }
           },
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 5000
-          }
+          { enableHighAccuracy: true, timeout: 4000, maximumAge: 10000 }
         );
       });
+
+      return this._locPromise;
     },
 
     loginWithName(name) {

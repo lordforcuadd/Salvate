@@ -293,12 +293,26 @@ export const useMeshStore = defineStore('mesh', {
       }
     },
 
-    setupWebRTCPeer(currentUser) {
+    async setupWebRTCPeer(currentUser) {
+      if (!currentUser || !currentUser.id) return;
+      if (this._isInitializingPeer) return;
+
+      const cleanPeerId = currentUser.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      // If already connected with active peer ID, do not tear down
+      if (this.peerInstance && !this.peerInstance.destroyed && !this.peerInstance.disconnected && this.peerInstance.id === cleanPeerId) {
+        return;
+      }
+
+      this._isInitializingPeer = true;
+
       try {
-        const cleanPeerId = currentUser.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-        
         if (this.peerInstance && !this.peerInstance.destroyed) {
-          try { this.peerInstance.destroy(); } catch (e) {}
+          try {
+            this.peerInstance.removeAllListeners();
+            this.peerInstance.destroy();
+          } catch (e) {}
+          this.peerInstance = null;
         }
 
         const isCustom = this.signalingServer?.isCustom;
@@ -307,7 +321,7 @@ export const useMeshStore = defineStore('mesh', {
         const path = isCustom ? (this.signalingServer.path || '/') : '/';
         const secure = isCustom ? Boolean(this.signalingServer.secure) : true;
 
-        this.peerInstance = new Peer(cleanPeerId, {
+        const peer = new Peer(cleanPeerId, {
           host,
           port,
           path,
@@ -324,14 +338,18 @@ export const useMeshStore = defineStore('mesh', {
           }
         });
 
-        this.peerInstance.on('open', (id) => {
+        this.peerInstance = peer;
+
+        peer.on('open', (id) => {
+          this._isInitializingPeer = false;
           this.isP2PActive = true;
           this.announceSelfToKnownPeers(currentUser);
         });
 
-        this.peerInstance.on('disconnected', () => {
+        peer.on('disconnected', () => {
+          this._isInitializingPeer = false;
           this.isP2PActive = false;
-          clearTimeout(this.reconnectTimeout);
+          if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
           this.reconnectTimeout = setTimeout(() => {
             if (navigator.onLine || this.signalingServer?.isCustom) {
               this.setupWebRTCPeer(currentUser);
@@ -339,14 +357,15 @@ export const useMeshStore = defineStore('mesh', {
           }, 3000);
         });
 
-        this.peerInstance.on('connection', (conn) => {
+        peer.on('connection', (conn) => {
           this.registerDataConnection(conn, currentUser);
         });
 
-        this.peerInstance.on('error', (err) => {
+        peer.on('error', (err) => {
+          this._isInitializingPeer = false;
           if (err.type === 'peer-unavailable') return;
           this.isP2PActive = false;
-          clearTimeout(this.reconnectTimeout);
+          if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
           this.reconnectTimeout = setTimeout(() => {
             if (navigator.onLine || this.signalingServer?.isCustom) {
               this.setupWebRTCPeer(currentUser);
@@ -355,6 +374,7 @@ export const useMeshStore = defineStore('mesh', {
         });
 
       } catch (e) {
+        this._isInitializingPeer = false;
         console.warn('WebRTC fallback to local gossip:', e);
       }
     },
