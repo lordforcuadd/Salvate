@@ -246,17 +246,26 @@ export const useMeshStore = defineStore('mesh', {
     async reloadFromDB() {
       const dbUsers = await getAllDBItems('users');
       if (dbUsers) {
-        this.users = dbUsers.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+        const userMap = new Map();
+        (this.users || []).forEach(u => userMap.set(u.id, u));
+        dbUsers.forEach(u => userMap.set(u.id, { ...userMap.get(u.id), ...u }));
+        this.users = Array.from(userMap.values()).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
       }
 
       const dbBroadcasts = await getAllDBItems('broadcast_messages');
       if (dbBroadcasts) {
-        this.broadcasts = dbBroadcasts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const msgMap = new Map();
+        (this.broadcasts || []).forEach(b => msgMap.set(b.id, b));
+        dbBroadcasts.forEach(b => msgMap.set(b.id, { ...msgMap.get(b.id), ...b }));
+        this.broadcasts = Array.from(msgMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       }
 
       const dbHistory = await getAllDBItems('status_history');
       if (dbHistory) {
-        this.pingHistory = dbHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const histMap = new Map();
+        (this.pingHistory || []).forEach(h => histMap.set(h.id, h));
+        dbHistory.forEach(h => histMap.set(h.id, { ...histMap.get(h.id), ...h }));
+        this.pingHistory = Array.from(histMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       }
     },
 

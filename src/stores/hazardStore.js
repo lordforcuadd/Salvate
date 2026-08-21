@@ -19,7 +19,12 @@ export const useHazardStore = defineStore('hazard', {
   actions: {
     async initHazardStore() {
       const dbHazards = await getAllDBItems('hazard_reports');
-      this.hazards = (dbHazards || []).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      if (dbHazards) {
+        const hazardMap = new Map();
+        (this.hazards || []).forEach(h => hazardMap.set(h.id, h));
+        dbHazards.forEach(h => hazardMap.set(h.id, { ...hazardMap.get(h.id), ...h }));
+        this.hazards = Array.from(hazardMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      }
       this.syncPendingCount = this.hazards.filter(h => !h.synced).length;
     },
 
