@@ -1,8 +1,8 @@
 // Sálvate PWA — Supabase Cloud Sync & Realtime Web Push Client
 // Enables hybrid cloud synchronization and remote Web Push to closed devices
 
-const SUPABASE_URL = 'https://wyvsemwtosymaestkdxh.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5dnNlbXd0b3N5bWFlc3RrZHhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3MzU0MjEsImV4cCI6MjA5MzMxMTQyMX0.KHWIlzZwoP7yNhmapEZ-t_ilPVyIse2-WIZJpXtsS0E';
+const SUPABASE_URL = 'https://vnwpudichitahnugxach.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZud3B1ZGljaGl0YWhudWd4YWNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczMjMxNDgsImV4cCI6MjEwMjg5OTE0OH0.O1_fWJyuzLSdglYe0bHEhfu8ftVl6YVaK7W-AvRQZFQ';
 export const VAPID_PUBLIC_KEY = 'BD56oYjLVWHxv7HRg1GG8KktbRVcqsShyYpMDcl-IyJrn0Gw1Syv8VZXOlI1Flaxue00Dt6dXFwUXaUXe7wzdyU';
 
 const headers = {
