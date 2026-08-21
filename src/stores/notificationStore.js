@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { VAPID_PUBLIC_KEY, registerPushSubscription, urlBase64ToUint8Array, sendRemoteWebPush } from '../services/supabase';
 
 function playAlertChirp(type = 'default') {
   try {
@@ -59,12 +60,13 @@ export const useNotificationStore = defineStore('notification', {
   },
 
   actions: {
-    async requestPermission() {
+    async requestPermission(userId = null) {
       if (typeof Notification === 'undefined') return 'unsupported';
       try {
         const result = await Notification.requestPermission();
         this.permission = result;
         if (result === 'granted') {
+          await this.subscribeToWebPush(userId);
           // Register Periodic Background Sync if available on device (PWA background worker)
           if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
             try {
@@ -80,6 +82,34 @@ export const useNotificationStore = defineStore('notification', {
         return result;
       } catch (err) {
         return 'denied';
+      }
+    },
+
+    async subscribeToWebPush(userId = null) {
+      if (typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return false;
+      }
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (!reg || !reg.pushManager) return false;
+
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          const convertedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: convertedKey
+          });
+        }
+
+        const effectiveUserId = userId || localStorage.getItem('salvate_current_user') ? JSON.parse(localStorage.getItem('salvate_current_user') || '{}').id : null;
+        if (effectiveUserId && sub) {
+          await registerPushSubscription(effectiveUserId, sub);
+        }
+        return true;
+      } catch (err) {
+        console.warn('Web Push Subscription notice:', err);
+        return false;
       }
     },
 

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { saveDBItem, clearDBStore, masterDeleteWholeDB } from '../services/db';
 import { useMeshStore } from './meshStore';
 import { useSeismicStore } from './seismicStore';
+import { useNotificationStore } from './notificationStore';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -41,6 +42,10 @@ export const useAuthStore = defineStore('auth', {
           this.isAuthenticated = true;
           saveDBItem('users', this.user);
           this.captureInitialLocation();
+          try {
+            const notifStore = useNotificationStore();
+            notifStore.subscribeToWebPush(this.user.id);
+          } catch (e) {}
         } catch (e) {
           console.error('Error parsing stored user:', e);
         }
@@ -115,6 +120,10 @@ export const useAuthStore = defineStore('auth', {
 
       localStorage.setItem('salvate_current_user', JSON.stringify(newUser));
       saveDBItem('users', newUser);
+      try {
+        const notifStore = useNotificationStore();
+        notifStore.subscribeToWebPush(newUser.id);
+      } catch (e) {}
       return true;
     },
 

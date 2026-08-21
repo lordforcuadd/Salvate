@@ -4,6 +4,7 @@ import { saveDBItem, getAllDBItems, deleteDBItem } from '../services/db';
 import { useAuthStore } from './authStore';
 import { useHazardStore } from './hazardStore';
 import { useNotificationStore } from './notificationStore';
+import { syncMessageToCloud, fetchRecentCloudMessages, syncPingToCloud, sendRemoteWebPush } from '../services/supabase';
 
 // Ultra-compact SDP Minifier (reduces 1500+ byte WebRTC SDP down to ~150 bytes for ultra-fast QR scanning)
 function minifySDP(sdp, uid, name, type) {
@@ -107,12 +108,34 @@ export const useMeshStore = defineStore('mesh', {
           this.isOnlineMode = true;
           const authStore = useAuthStore();
           if (authStore.user) {
-            this.setupWebRTCPeer(authStore.user);
+            if (this.peerInstance && !this.peerInstance.destroyed && this.peerInstance.disconnected) {
+              try { this.peerInstance.reconnect(); } catch (e) {}
+            } else {
+              this.setupWebRTCPeer(authStore.user);
+            }
             this.announceSelfToKnownPeers(authStore.user);
           }
+          fetchRecentCloudMessages(50).then(cloudMsgs => {
+            if (cloudMsgs && cloudMsgs.length > 0) {
+              let hasNew = false;
+              cloudMsgs.forEach(msg => {
+                const exists = this.broadcasts.some(b => b.id === msg.id);
+                if (!exists) {
+                  this.broadcasts.push(msg);
+                  saveDBItem('broadcast_messages', msg).catch(() => {});
+                  hasNew = true;
+                }
+              });
+              if (hasNew) {
+                localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+              }
+            }
+          }).catch(() => {});
           this.processOutboxQueue();
         });
-        window.addEventListener('offline', () => this.isOnlineMode = false);
+        window.addEventListener('offline', () => {
+          this.isOnlineMode = false;
+        });
 
         window.addEventListener('storage', (e) => {
           if (e.key === 'salvate_broadcast_update' || e.key === 'salvate_users_update') {
@@ -132,6 +155,25 @@ export const useMeshStore = defineStore('mesh', {
       }
 
       await this.reloadFromDB();
+
+      if (navigator.onLine) {
+        fetchRecentCloudMessages(50).then(cloudMsgs => {
+          if (cloudMsgs && cloudMsgs.length > 0) {
+            let hasNew = false;
+            cloudMsgs.forEach(msg => {
+              const exists = this.broadcasts.some(b => b.id === msg.id);
+              if (!exists) {
+                this.broadcasts.push(msg);
+                saveDBItem('broadcast_messages', msg).catch(() => {});
+                hasNew = true;
+              }
+            });
+            if (hasNew) {
+              localStorage.setItem('salvate_broadcast_update', Date.now().toString());
+            }
+          }
+        }).catch(() => {});
+      }
 
       if ('BroadcastChannel' in window && !this.broadcastChannel) {
         this.broadcastChannel = new BroadcastChannel('salvate_mesh_gossip');
@@ -378,17 +420,26 @@ export const useMeshStore = defineStore('mesh', {
           this._isInitializingPeer = false;
           this.isP2PActive = true;
           this.announceSelfToKnownPeers(currentUser);
+          this.processOutboxQueue();
         });
 
         peer.on('disconnected', () => {
           this._isInitializingPeer = false;
-          this.isP2PActive = false;
-          if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
-          this.reconnectTimeout = setTimeout(() => {
-            if (navigator.onLine || this.signalingServer?.isCustom) {
-              this.setupWebRTCPeer(currentUser);
-            }
-          }, 3000);
+          this.isP2PActive = this.peerConnections.some(c => c && c.open);
+          if (navigator.onLine || this.signalingServer?.isCustom) {
+            try {
+              if (this.peerInstance && !this.peerInstance.destroyed) {
+                this.peerInstance.reconnect();
+                return;
+              }
+            } catch (e) {}
+            if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = setTimeout(() => {
+              if (navigator.onLine || this.signalingServer?.isCustom) {
+                this.setupWebRTCPeer(currentUser);
+              }
+            }, 3000);
+          }
         });
 
         peer.on('connection', (conn) => {
@@ -398,17 +449,20 @@ export const useMeshStore = defineStore('mesh', {
         peer.on('error', (err) => {
           this._isInitializingPeer = false;
           if (err.type === 'peer-unavailable') return;
-          this.isP2PActive = false;
+          this.isP2PActive = this.peerConnections.some(c => c && c.open);
+
+          const delay = err.type === 'unavailable-id' ? 6000 : 3000;
           if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
           this.reconnectTimeout = setTimeout(() => {
             if (navigator.onLine || this.signalingServer?.isCustom) {
               this.setupWebRTCPeer(currentUser);
             }
-          }, 3000);
+          }, delay);
         });
 
       } catch (e) {
         this._isInitializingPeer = false;
+        this.isP2PActive = this.peerConnections.some(c => c && c.open);
         console.warn('WebRTC fallback to local gossip:', e);
       }
     },
@@ -816,6 +870,17 @@ export const useMeshStore = defineStore('mesh', {
         }
       });
 
+      if (navigator.onLine) {
+        syncPingToCloud(updatedUser).catch(() => {});
+        sendRemoteWebPush({
+          title: `Ping de ${updatedUser.name}`,
+          body: `${updatedUser.name} reportó su estado: "${updatedUser.status}"`,
+          type: 'status',
+          tabToOpen: 'status',
+          senderId: updatedUser.id
+        }).catch(() => {});
+      }
+
       this.announceSelfToKnownPeers(updatedUser);
 
       this.pushNotification({
@@ -845,9 +910,7 @@ export const useMeshStore = defineStore('mesh', {
       if (!hasActiveConn && !isOnline) return;
 
       for (const msg of pendingMessages) {
-        msg.status = 'sent';
-        msg.synced = isOnline;
-        await saveDBItem('broadcast_messages', msg);
+        let delivered = false;
 
         const gossipPayload = {
           _msgId: `g_${msg.id}_${Date.now()}`,
@@ -859,9 +922,31 @@ export const useMeshStore = defineStore('mesh', {
 
         this.peerConnections.forEach(conn => {
           if (conn && conn.open) {
-            try { conn.send(gossipPayload); } catch (e) {}
+            try {
+              conn.send(gossipPayload);
+              delivered = true;
+            } catch (e) {}
           }
         });
+
+        if (isOnline) {
+          const cloudOk = await syncMessageToCloud(msg);
+          if (cloudOk) delivered = true;
+          sendRemoteWebPush({
+            title: msg.recipientId ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
+            body: msg.type === 'audio' ? 'Nota de voz de emergencia recibida' : msg.content,
+            type: 'broadcast',
+            tabToOpen: 'broadcast',
+            recipientId: msg.recipientId,
+            senderId: msg.senderId
+          }).catch(() => {});
+        }
+
+        if (delivered || isOnline) {
+          msg.status = 'sent';
+          msg.synced = isOnline;
+          await saveDBItem('broadcast_messages', msg);
+        }
       }
 
       localStorage.setItem('salvate_broadcast_update', Date.now().toString());
@@ -877,7 +962,8 @@ export const useMeshStore = defineStore('mesh', {
         });
       }
 
-      const hasActiveConnection = this.peerConnections.some(c => c && c.open) || navigator.onLine;
+      const hasActiveConn = this.peerConnections.some(c => c && c.open);
+      const isOnline = navigator.onLine;
 
       const currentMaxSeq = (this.broadcasts || []).reduce((max, b) => Math.max(max, b.seq || 0), 0);
       this.maxSequence = Math.max(this.maxSequence || 0, currentMaxSeq) + 1;
@@ -899,10 +985,10 @@ export const useMeshStore = defineStore('mesh', {
           type: replyTo.type
         } : null,
         reactions: {},
-        status: hasActiveConnection ? 'sent' : 'pending',
+        status: (hasActiveConn || isOnline) ? 'sent' : 'pending',
         timestamp: new Date().toISOString(),
-        synced: navigator.onLine,
-        mode: navigator.onLine ? 'Nacional (Internet)' : 'Red P2P Malla (Offline)',
+        synced: isOnline,
+        mode: isOnline ? 'Nacional (Internet)' : 'Red P2P Malla (Offline)',
         hopCount: 1
       };
 
@@ -911,27 +997,37 @@ export const useMeshStore = defineStore('mesh', {
 
       localStorage.setItem('salvate_broadcast_update', Date.now().toString());
 
-      if (hasActiveConnection) {
-        const gossipPayload = {
-          _msgId: `g_${broadcastMsg.id}_${Date.now()}`,
-          type: 'GOSSIP_BROADCAST',
-          payload: broadcastMsg
-        };
+      const gossipPayload = {
+        _msgId: `g_${broadcastMsg.id}_${Date.now()}`,
+        type: 'GOSSIP_BROADCAST',
+        payload: broadcastMsg
+      };
 
-        this.broadcastGossipLocally(gossipPayload);
+      this.broadcastGossipLocally(gossipPayload);
 
-        this.peerConnections.forEach(conn => {
-          if (conn && conn.open) {
-            try {
-              conn.send(gossipPayload);
-            } catch (e) {}
-          }
-        });
+      this.peerConnections.forEach(conn => {
+        if (conn && conn.open) {
+          try {
+            conn.send(gossipPayload);
+          } catch (e) {}
+        }
+      });
+
+      if (isOnline) {
+        syncMessageToCloud(broadcastMsg).catch(() => {});
+        sendRemoteWebPush({
+          title: broadcastMsg.recipientId ? `Mensaje Privado de ${broadcastMsg.senderName}` : `Mensaje de ${broadcastMsg.senderName}`,
+          body: broadcastMsg.type === 'audio' ? 'Nota de voz de emergencia recibida' : broadcastMsg.content,
+          type: 'broadcast',
+          tabToOpen: 'broadcast',
+          recipientId: broadcastMsg.recipientId,
+          senderId: broadcastMsg.senderId
+        }).catch(() => {});
       }
 
       this.pushNotification({
         type: 'broadcast',
-        title: hasActiveConnection ? 'Mensaje Transmitido' : 'Mensaje en Cola Offline',
+        title: (hasActiveConn || isOnline) ? 'Mensaje Transmitido' : 'Mensaje en Cola Offline',
         message: type === 'audio' ? 'Nota de voz grabada' : `"${content}"`
       });
 
