@@ -260,7 +260,15 @@ export const useMeshStore = defineStore('mesh', {
         const msgMap = new Map();
         (this.broadcasts || []).forEach(b => msgMap.set(b.id, b));
         dbBroadcasts.forEach(b => msgMap.set(b.id, { ...msgMap.get(b.id), ...b }));
-        this.broadcasts = Array.from(msgMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        this.broadcasts = Array.from(msgMap.values()).sort((a, b) => {
+          const tA = new Date(a.timestamp || 0).getTime();
+          const tB = new Date(b.timestamp || 0).getTime();
+          if (tB !== tA) return tB - tA;
+          const sA = a.seq || 0;
+          const sB = b.seq || 0;
+          if (sB !== sA) return sB - sA;
+          return String(b.id).localeCompare(String(a.id));
+        });
       }
 
       const dbHistory = await getAllDBItems('status_history');
@@ -867,8 +875,12 @@ export const useMeshStore = defineStore('mesh', {
 
       const hasActiveConnection = this.peerConnections.some(c => c && c.open) || navigator.onLine;
 
+      const currentMaxSeq = (this.broadcasts || []).reduce((max, b) => Math.max(max, b.seq || 0), 0);
+      this.maxSequence = Math.max(this.maxSequence || 0, currentMaxSeq) + 1;
+
       const broadcastMsg = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        seq: this.maxSequence,
         senderId,
         senderName,
         recipientId: recipientId || null,
@@ -1196,6 +1208,13 @@ export const useMeshStore = defineStore('mesh', {
         const exists = this.broadcasts.some(b => b.id === msg.id);
         if (!exists) {
           msg.hopCount = (msg.hopCount || 1) + 1;
+
+          const currentMaxSeq = (this.broadcasts || []).reduce((max, b) => Math.max(max, b.seq || 0), 0);
+          this.maxSequence = Math.max(this.maxSequence || 0, currentMaxSeq, msg.seq || 0) + 1;
+          if (!msg.seq) {
+            msg.seq = this.maxSequence;
+          }
+
           this.broadcasts.unshift(msg);
           await saveDBItem('broadcast_messages', msg);
           
