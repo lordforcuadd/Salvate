@@ -1140,21 +1140,26 @@ export const useMeshStore = defineStore('mesh', {
             await saveDBItem('status_history', historyEntry);
           }
 
-          // Only alert user if status genuinely changed or on emergency SOS ping
-          if (statusChanged || isExplicitSOS) {
+          const isPing = Boolean(data.isPing);
+
+          // Alert user on status change, explicit SOS, or live status ping
+          if (statusChanged || isPing || isExplicitSOS) {
+            const title = isExplicitSOS ? `¡SOS de ${peer.name}!` : (isPing ? `Ping de ${peer.name}` : `Estado de ${peer.name}`);
+            const message = isPing ? `Reporte en vivo: "${peer.status || 'A salvo'}"` : `Cambió su estado a: "${peer.status || 'A salvo'}"`;
+
             this.pushNotification({
               type: 'status',
               status: peer.status || 'A salvo',
-              title: `Estado de ${peer.name}`,
-              message: `Cambió su estado a: "${peer.status || 'A salvo'}"`
+              title,
+              message
             });
 
             const notifStore = useNotificationStore();
             notifStore.notify({
               type: 'status',
-              title: `Estado de ${peer.name}`,
+              title,
               body: `${peer.name} reportó: "${peer.status || 'A salvo'}"`,
-              id: `peer_status_${peer.id}_${peer.updatedAt || Date.now()}`,
+              id: `peer_ping_${peer.id}_${Date.now()}`,
               tabToOpen: 'status'
             });
           }

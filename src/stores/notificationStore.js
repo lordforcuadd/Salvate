@@ -142,29 +142,53 @@ export const useNotificationStore = defineStore('notification', {
         } catch (e) {}
       }
 
-      // Native System Push / Web Notification
-      if (this.hasPermission && typeof Notification !== 'undefined') {
+      // Native System Push / Web Notification (Always fires in foreground & background)
+      if (typeof Notification !== 'undefined') {
         const options = {
           body,
           icon: '/pwa-192x192.png',
           badge: '/pwa-192x192.png',
-          tag: tag || `salvate-${type}-${Date.now()}`,
+          tag: tag || `salvate-${type}-${id || Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           vibrate: type === 'seismic' ? [300, 100, 300, 100, 400] : [200, 100, 200],
           data: { tab: tabToOpen || type, timestamp: Date.now() },
           requireInteraction: type === 'seismic' || type === 'status' || type === 'hazard',
           renotify: true
         };
 
-        try {
-          if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-            const reg = await navigator.serviceWorker.ready;
-            if (reg && reg.showNotification) {
-              await reg.showNotification(title, options);
-              return;
+        const triggerNative = async () => {
+          if (Notification.permission === 'granted') {
+            try {
+              if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                if (reg && reg.showNotification) {
+                  await reg.showNotification(title, options);
+                  return;
+                }
+              }
+            } catch (e) {}
+            try {
+              new Notification(title, options);
+            } catch (e) {}
+          } else if (Notification.permission === 'default') {
+            const perm = await this.requestPermission();
+            if (perm === 'granted') {
+              try {
+                if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+                  const reg = await navigator.serviceWorker.ready;
+                  if (reg && reg.showNotification) {
+                    await reg.showNotification(title, options);
+                    return;
+                  }
+                }
+              } catch (e) {}
+              try {
+                new Notification(title, options);
+              } catch (e) {}
             }
           }
-          new Notification(title, options);
-        } catch (e) {}
+        };
+
+        triggerNative().catch(() => {});
       }
     },
 
