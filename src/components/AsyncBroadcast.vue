@@ -435,16 +435,24 @@ const activeFilterUser = computed(() => {
 
 const filteredBroadcasts = computed(() => {
   const all = [...(meshStore.broadcasts || [])];
+  
   if (!selectedRecipientId.value) {
-    return all.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    // 1. SALA COMUNITARIA: Únicamente mensajes públicos (sin destinatario privado)
+    return all
+      .filter(b => !b.recipientId)
+      .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
   }
+
+  // 2. CHAT PRIVADO 1-A-1: Únicamente mensajes privados directos entre el usuario actual y el contacto seleccionado
+  const targetId = selectedRecipientId.value;
+  const myId = authStore.userId;
+
   return all
     .filter(b => 
-      (b.senderId === selectedRecipientId.value && b.recipientId === authStore.userId) ||
-      (b.senderId === authStore.userId && b.recipientId === selectedRecipientId.value) ||
-      (!b.recipientId && b.senderId === selectedRecipientId.value)
+      (b.senderId === myId && b.recipientId === targetId) ||
+      (b.senderId === targetId && b.recipientId === myId)
     )
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
 });
 
 const groupedMessages = computed(() => {
@@ -497,10 +505,20 @@ const scrollToBottom = (smooth = true) => {
   nextTick(() => {
     if (chatFeedRef.value) {
       chatFeedRef.value.scrollTo({
-        top: chatFeedRef.value.scrollHeight,
+        top: chatFeedRef.value.scrollHeight + 1000,
         behavior: smooth ? 'smooth' : 'auto'
       });
     }
+    setTimeout(() => {
+      if (chatFeedRef.value) {
+        chatFeedRef.value.scrollTop = chatFeedRef.value.scrollHeight + 1000;
+      }
+    }, 60);
+    setTimeout(() => {
+      if (chatFeedRef.value) {
+        chatFeedRef.value.scrollTop = chatFeedRef.value.scrollHeight + 1000;
+      }
+    }, 250);
   });
 };
 
@@ -675,13 +693,18 @@ const stopAndSendRecording = () => {
   }
 };
 
+watch(selectedRecipientId, async (newRecipient) => {
+  await meshStore.markMessagesAsRead(newRecipient);
+  scrollToBottom(false);
+});
+
 watch(() => filteredBroadcasts.value.length, () => {
   scrollToBottom(true);
 });
 
 onMounted(async () => {
   await meshStore.reloadFromDB();
-  await meshStore.markMessagesAsRead();
+  await meshStore.markMessagesAsRead(selectedRecipientId.value);
   scrollToBottom(false);
 });
 

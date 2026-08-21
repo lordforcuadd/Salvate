@@ -1196,7 +1196,10 @@ export const useMeshStore = defineStore('mesh', {
           
           localStorage.setItem('salvate_broadcast_update', Date.now().toString());
 
-          if (msg.senderId !== currentUserId) {
+          const isForMe = !msg.recipientId || msg.recipientId === currentUserId;
+          const isDirectMessage = Boolean(msg.recipientId);
+
+          if (msg.senderId !== currentUserId && isForMe) {
             // Immediate delivery ACK
             const ackPayload = {
               _msgId: `ack_${msg.id}_${currentUserId}_${Date.now()}`,
@@ -1216,13 +1219,13 @@ export const useMeshStore = defineStore('mesh', {
 
             this.pushNotification({
               type: 'broadcast',
-              title: `Mensaje de ${msg.senderName}`,
+              title: isDirectMessage ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
               message: msg.type === 'audio' ? 'Nota de voz recibida' : `"${msg.content}"`
             });
             const notifStore = useNotificationStore();
             notifStore.notify({
               type: 'broadcast',
-              title: `Mensaje de ${msg.senderName}`,
+              title: isDirectMessage ? `Mensaje Privado de ${msg.senderName}` : `Mensaje de ${msg.senderName}`,
               body: msg.type === 'audio' ? 'Nota de voz de emergencia recibida' : (msg.content || 'Nuevo mensaje comunitario'),
               id: msg.id,
               tabToOpen: 'broadcast'
