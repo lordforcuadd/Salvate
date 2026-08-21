@@ -101,7 +101,7 @@ export const useAuthStore = defineStore('auth', {
       return this._locPromise;
     },
 
-    loginWithName(name) {
+    async loginWithName(name) {
       if (!name || !name.trim()) return false;
       const cleanName = name.trim();
       const hash = Math.random().toString(36).substring(2, 8);
@@ -115,11 +115,16 @@ export const useAuthStore = defineStore('auth', {
         updatedAt: new Date().toISOString(),
       };
 
+      // Cleanly reset previous session's contacts in memory and DB so the new account starts fresh
+      await clearDBStore('users');
+      const meshStore = useMeshStore();
+      meshStore.users = [newUser];
+
       this.user = newUser;
       this.isAuthenticated = true;
 
       localStorage.setItem('salvate_current_user', JSON.stringify(newUser));
-      saveDBItem('users', newUser);
+      await saveDBItem('users', newUser);
       try {
         const notifStore = useNotificationStore();
         notifStore.subscribeToWebPush(newUser.id);
@@ -169,6 +174,9 @@ export const useAuthStore = defineStore('auth', {
       this.user = null;
       this.isAuthenticated = false;
       localStorage.removeItem('salvate_current_user');
+      const meshStore = useMeshStore();
+      meshStore.users = [];
+      meshStore.broadcasts = [];
     },
 
     async resetAllData() {
