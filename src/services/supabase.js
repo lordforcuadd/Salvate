@@ -138,9 +138,8 @@ export async function registerPushSubscription(userId, subscription) {
     if (!endpoint || !p256dh || !auth) return false;
 
     const payload = {
-      id: `sub_${userId}_${btoa(endpoint).slice(-16).replace(/[^a-zA-Z0-9]/g, '_')}`,
-      user_id: userId,
       endpoint,
+      user_id: userId,
       p256dh,
       auth,
       updated_at: new Date().toISOString()
