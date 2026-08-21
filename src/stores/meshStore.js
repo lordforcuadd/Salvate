@@ -270,9 +270,11 @@ export const useMeshStore = defineStore('mesh', {
           // Auto-recover PeerJS instance and reconnect with known contacts
           const authStore = useAuthStore();
           if (authStore.user && (navigator.onLine || this.signalingServer?.isCustom)) {
-            if (!this.peerInstance || this.peerInstance.destroyed || this.peerInstance.disconnected) {
-              this.setupWebRTCPeer(authStore.user);
-            } else {
+            if (!this.peerInstance || this.peerInstance.destroyed) {
+              if (!this._isInitializingPeer && !this.reconnectTimeout) {
+                this.setupWebRTCPeer(authStore.user);
+              }
+            } else if (!this.peerInstance.disconnected) {
               this.users.forEach(u => {
                 if (u.id !== authStore.user.id) {
                   const cleanTargetId = u.id.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -530,20 +532,14 @@ export const useMeshStore = defineStore('mesh', {
         peer.on('disconnected', () => {
           this._isInitializingPeer = false;
           this.isP2PActive = this.peerConnections.some(c => c && c.open);
-          if (navigator.onLine || this.signalingServer?.isCustom) {
-            try {
-              if (this.peerInstance && !this.peerInstance.destroyed) {
-                this.peerInstance.reconnect();
-                return;
-              }
-            } catch (e) {}
-            if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = setTimeout(() => {
-              if (navigator.onLine || this.signalingServer?.isCustom) {
-                this.setupWebRTCPeer(currentUser);
-              }
-            }, 3000);
-          }
+
+          if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+          this.reconnectTimeout = setTimeout(() => {
+            const authStore = useAuthStore();
+            if (authStore.user && (navigator.onLine || this.signalingServer?.isCustom)) {
+              this.setupWebRTCPeer(currentUser);
+            }
+          }, 5000);
         });
 
         peer.on('connection', (conn) => {
@@ -555,10 +551,11 @@ export const useMeshStore = defineStore('mesh', {
           if (err.type === 'peer-unavailable') return;
           this.isP2PActive = this.peerConnections.some(c => c && c.open);
 
-          const delay = err.type === 'unavailable-id' ? 6000 : 3000;
           if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+          const delay = err.type === 'unavailable-id' ? 10000 : 5000;
           this.reconnectTimeout = setTimeout(() => {
-            if (navigator.onLine || this.signalingServer?.isCustom) {
+            const authStore = useAuthStore();
+            if (authStore.user && (navigator.onLine || this.signalingServer?.isCustom)) {
               this.setupWebRTCPeer(currentUser);
             }
           }, delay);
