@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { Peer } from 'peerjs';
-import { saveDBItem, getAllDBItems, deleteDBItem } from '../services/db';
+import { saveDBItem, saveDBItemsBatch, getAllDBItems, deleteDBItem } from '../services/db';
 import { useAuthStore } from './authStore';
 import { useHazardStore } from './hazardStore';
 import { useNotificationStore } from './notificationStore';
@@ -118,16 +118,16 @@ export const useMeshStore = defineStore('mesh', {
           }
           fetchRecentCloudMessages(50).then(cloudMsgs => {
             if (cloudMsgs && cloudMsgs.length > 0) {
-              let hasNew = false;
+              const newMsgs = [];
               cloudMsgs.forEach(msg => {
                 const exists = this.broadcasts.some(b => b.id === msg.id);
                 if (!exists) {
                   this.broadcasts.push(msg);
-                  saveDBItem('broadcast_messages', msg).catch(() => {});
-                  hasNew = true;
+                  newMsgs.push(msg);
                 }
               });
-              if (hasNew) {
+              if (newMsgs.length > 0) {
+                saveDBItemsBatch('broadcast_messages', newMsgs).catch(() => {});
                 localStorage.setItem('salvate_broadcast_update', Date.now().toString());
               }
             }
@@ -160,16 +160,16 @@ export const useMeshStore = defineStore('mesh', {
       if (navigator.onLine) {
         fetchRecentCloudMessages(50).then(cloudMsgs => {
           if (cloudMsgs && cloudMsgs.length > 0) {
-            let hasNew = false;
+            const newMsgs = [];
             cloudMsgs.forEach(msg => {
               const exists = this.broadcasts.some(b => b.id === msg.id);
               if (!exists) {
                 this.broadcasts.push(msg);
-                saveDBItem('broadcast_messages', msg).catch(() => {});
-                hasNew = true;
+                newMsgs.push(msg);
               }
             });
-            if (hasNew) {
+            if (newMsgs.length > 0) {
+              saveDBItemsBatch('broadcast_messages', newMsgs).catch(() => {});
               localStorage.setItem('salvate_broadcast_update', Date.now().toString());
             }
           }

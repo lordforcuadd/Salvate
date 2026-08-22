@@ -121,6 +121,28 @@ let oscillator = null;
 let gainNode = null;
 let chirpInterval = null;
 
+let wakeLockSentinel = null;
+
+const requestScreenWakeLock = async () => {
+  try {
+    if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && !wakeLockSentinel) {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      wakeLockSentinel.onrelease = () => {
+        wakeLockSentinel = null;
+      };
+    }
+  } catch (e) {}
+};
+
+const releaseScreenWakeLock = () => {
+  if (wakeLockSentinel && !isWhistleActive.value && !isTorchActive.value && !isScreenStrobeActive.value) {
+    try {
+      wakeLockSentinel.release();
+    } catch (e) {}
+    wakeLockSentinel = null;
+  }
+};
+
 const startWhistle = (mode = 'constant') => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -151,6 +173,7 @@ const startWhistle = (mode = 'constant') => {
     oscillator.start();
     isWhistleActive.value = true;
     whistleMode.value = mode;
+    requestScreenWakeLock();
   } catch (e) {
     dialogStore.alert({
       title: 'Audio de Emergencia',
@@ -175,6 +198,7 @@ const stopWhistle = () => {
     audioCtx = null;
   }
   isWhistleActive.value = false;
+  releaseScreenWakeLock();
 };
 
 const toggleWhistle = (mode) => {
@@ -204,6 +228,7 @@ const toggleTorchSOS = async () => {
 
 const startTorchSOS = async () => {
   isTorchActive.value = true;
+  requestScreenWakeLock();
 
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -303,10 +328,16 @@ const stopTorchSOS = () => {
     mediaStream.getTracks().forEach(t => t.stop());
     mediaStream = null;
   }
+
+  releaseScreenWakeLock();
 };
 
 onBeforeUnmount(() => {
   stopWhistle();
   stopTorchSOS();
+  if (wakeLockSentinel) {
+    try { wakeLockSentinel.release(); } catch (e) {}
+    wakeLockSentinel = null;
+  }
 });
 </script>

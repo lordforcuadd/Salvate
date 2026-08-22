@@ -87,6 +87,44 @@ export async function clearDBStore(storeName) {
   }
 }
 
+export async function saveDBItemsBatch(storeName, items = []) {
+  if (!items || items.length === 0) return true;
+  try {
+    const db = await getDBInstance();
+    const tx = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    const plainItems = JSON.parse(JSON.stringify(items));
+    for (const item of plainItems) {
+      store.put(item);
+    }
+    await tx.done;
+    return true;
+  } catch (e) {
+    console.error(`Error saving batch to IDB store ${storeName}:`, e);
+    return false;
+  }
+}
+
+export async function pruneOldDBItems(storeName, maxAgeDays = 14) {
+  try {
+    const db = await getDBInstance();
+    const all = await db.getAll(storeName);
+    if (!all || all.length === 0) return;
+    const cutoffTime = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
+    const tx = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    for (const item of all) {
+      const itemTime = new Date(item.timestamp || item.updatedAt || item.created_at || 0).getTime();
+      if (itemTime > 0 && itemTime < cutoffTime) {
+        store.delete(item.id || item.key);
+      }
+    }
+    await tx.done;
+  } catch (e) {
+    console.error(`Error pruning store ${storeName}:`, e);
+  }
+}
+
 export async function masterDeleteWholeDB() {
   try {
     if (dbPromise) {
