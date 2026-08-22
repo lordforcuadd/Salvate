@@ -658,7 +658,15 @@ const togglePlayAudio = (msgId, url) => {
 
 const startRecording = async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
     let options = {};
     if (typeof MediaRecorder !== 'undefined') {
       if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
@@ -666,7 +674,7 @@ const startRecording = async () => {
       } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
         options = { mimeType: 'audio/mp4', audioBitsPerSecond: 16000 };
       } else if (MediaRecorder.isTypeSupported('audio/aac')) {
-        options = { mimeType: 'audio/aac' };
+        options = { mimeType: 'audio/aac', audioBitsPerSecond: 16000 };
       }
     }
 

@@ -12,6 +12,23 @@ const headers = {
   'Prefer': 'return=minimal'
 };
 
+async function fetchWithRetry(url, options = {}, retries = 3, delays = [300, 900, 2000]) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 408)) {
+        return res;
+      }
+    } catch (e) {
+      if (i === retries - 1) throw e;
+    }
+    if (i < delays.length) {
+      await new Promise(r => setTimeout(r, delays[i]));
+    }
+  }
+  return fetch(url, options);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. CLOUD SYNC: Messages, Pings & Hazards
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,7 +50,7 @@ export async function syncMessageToCloud(msg) {
       seq: msg.seq || 0
     };
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/salvate_messages`, {
+    const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/salvate_messages`, {
       method: 'POST',
       headers: { ...headers, 'Prefer': 'resolution=merge-duplicates' },
       body: JSON.stringify(payload)
@@ -91,7 +108,7 @@ export async function syncPingToCloud(ping) {
       is_ping: ping.isPing !== false
     };
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/salvate_pings`, {
+    const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/salvate_pings`, {
       method: 'POST',
       headers: { ...headers, 'Prefer': 'resolution=merge-duplicates' },
       body: JSON.stringify(payload)
@@ -108,7 +125,7 @@ export async function syncPingToCloud(ping) {
 export async function sendRemoteWebPush({ title, body, type = 'broadcast', tabToOpen = 'dashboard', recipientId = null, senderId = null, tag = null, id = null }) {
   if (!navigator.onLine) return false;
   try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+    const res = await fetchWithRetry(`${SUPABASE_URL}/functions/v1/send-push`, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -152,7 +169,7 @@ export async function registerPushSubscription(userId, subscription) {
       updated_at: new Date().toISOString()
     };
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/salvate_push_subscriptions`, {
+    const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/salvate_push_subscriptions`, {
       method: 'POST',
       headers: { ...headers, 'Prefer': 'resolution=merge-duplicates' },
       body: JSON.stringify(payload)

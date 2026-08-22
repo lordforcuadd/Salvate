@@ -393,6 +393,11 @@ onMounted(async () => {
   await seismicStore.initSeismicStore(authStore.userCoords);
   await nextTick();
   initMap();
+  setTimeout(() => {
+    if (map) {
+      map.invalidateSize();
+    }
+  }, 250);
 });
 
 // Reactively update markers when displayed events change

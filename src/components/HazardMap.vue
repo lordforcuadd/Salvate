@@ -245,6 +245,11 @@ onMounted(async () => {
   }
   await nextTick();
   initMap();
+  setTimeout(() => {
+    if (map) {
+      map.invalidateSize();
+    }
+  }, 250);
 });
 
 watch(() => hazardStore.activeHazards, () => {

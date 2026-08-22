@@ -6,16 +6,25 @@ let userHasInteracted = false;
 let _listenersRegistered = false;
 
 function unlockAudio() {
+  if (userHasInteracted && sharedAudioCtx && sharedAudioCtx.state === 'running') return;
   userHasInteracted = true;
-  if (!sharedAudioCtx) {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtx) {
-      try { sharedAudioCtx = new AudioCtx(); } catch (e) {}
+  try {
+    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtxClass && !sharedAudioCtx) {
+      sharedAudioCtx = new AudioCtxClass();
     }
-  }
-  if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
-    sharedAudioCtx.resume().catch(() => {});
-  }
+    if (sharedAudioCtx) {
+      if (sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume().catch(() => {});
+      }
+      // Zero-latency pre-warm: Play 1 silent frame to wake mobile DAC
+      const buffer = sharedAudioCtx.createBuffer(1, 1, 22050);
+      const source = sharedAudioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(sharedAudioCtx.destination);
+      source.start(0);
+    }
+  } catch (e) {}
 }
 
 if (typeof window !== 'undefined' && !_listenersRegistered) {

@@ -23,7 +23,18 @@ export const useAuthStore = defineStore('auth', {
       if (this._initialized) return;
       this._initialized = true;
 
-      window.addEventListener('online', () => this.isOnline = true);
+      window.addEventListener('online', () => {
+        this.isOnline = true;
+        try {
+          const meshStore = useMeshStore();
+          meshStore.processOutboxQueue();
+          if (this.user) {
+            meshStore.setupWebRTCPeer(this.user);
+          }
+          const seismicStore = useSeismicStore();
+          seismicStore.fetchSeismicData(this.userCoords);
+        } catch (e) {}
+      });
       window.addEventListener('offline', () => this.isOnline = false);
 
       window.addEventListener('storage', (e) => {
@@ -53,7 +64,9 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async captureInitialLocation() {
-      if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        return this.getLastKnownLocation();
+      }
       if (this._locPromise) return this._locPromise;
 
       this._locPromise = new Promise((resolve) => {
@@ -61,8 +74,12 @@ export const useAuthStore = defineStore('auth', {
           const freshCoords = {
             lat: Number(pos.coords.latitude.toFixed(6)),
             lng: Number(pos.coords.longitude.toFixed(6)),
-            accuracy: Math.round(pos.coords.accuracy || 0)
+            accuracy: Math.round(pos.coords.accuracy || 0),
+            timestamp: Date.now()
           };
+          try {
+            localStorage.setItem('salvate_last_known_gps', JSON.stringify(freshCoords));
+          } catch (e) {}
           this.setUserCoords(freshCoords);
           try {
             const seismicStore = useSeismicStore();
@@ -77,7 +94,8 @@ export const useAuthStore = defineStore('auth', {
             onSuccess,
             () => {
               this._locPromise = null;
-              resolve(null);
+              const fallback = this.getLastKnownLocation();
+              resolve(fallback);
             },
             { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
           );
@@ -91,7 +109,8 @@ export const useAuthStore = defineStore('auth', {
               tryLowAccuracy();
             } else {
               this._locPromise = null;
-              resolve(null);
+              const fallback = this.getLastKnownLocation();
+              resolve(fallback);
             }
           },
           { enableHighAccuracy: true, timeout: 4000, maximumAge: 10000 }
@@ -99,6 +118,20 @@ export const useAuthStore = defineStore('auth', {
       });
 
       return this._locPromise;
+    },
+
+    getLastKnownLocation() {
+      try {
+        const cached = localStorage.getItem('salvate_last_known_gps');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+            this.setUserCoords(parsed);
+            return parsed;
+          }
+        }
+      } catch (e) {}
+      return null;
     },
 
     async loginWithName(name) {
